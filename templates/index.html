@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Couchbase Log Analyzer</title>
+
     <style>
         * {
             margin: 0;
@@ -134,14 +135,79 @@
         }
 
         .results-content {
-            padding: 1.5rem;
+            padding: 0;
+        }
+
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            min-width: fit-content;
+        }
+
+        .tab-btn:hover {
+            background: #e9ecef;
+            color: #667eea;
+        }
+
+        .tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            background: white;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 1.5rem 1.5rem 1.5rem 0;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* File Comparison Layout */
+        .file-comparison {
+            display: grid;
+            gap: 1.5rem;
+            padding: 0;
+            margin: 0;
+        }
+
+        .file-comparison.single-node {
+            grid-template-columns: 1fr;
+        }
+
+        .file-comparison.two-nodes {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .file-comparison.three-nodes {
+            grid-template-columns: 1fr 1fr 1fr;
+        }
+
+        .file-comparison.many-nodes {
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
         }
 
         .node-section {
-            margin-bottom: 2rem;
             border: 1px solid #e1e5e9;
             border-radius: 8px;
             overflow: hidden;
+            height: fit-content;
         }
 
         .node-header {
@@ -150,6 +216,28 @@
             border-bottom: 1px solid #e1e5e9;
             font-weight: 600;
             color: #495057;
+            font-size: 0.95rem;
+        }
+
+        .node-content {
+            padding: 1rem 1rem 1rem 0;
+        }
+
+        .file-missing {
+            padding: 2rem;
+            text-align: center;
+            color: #6c757d;
+            background: #f8f9fa;
+            border-radius: 5px;
+            font-style: italic;
+        }
+
+        .no-matches {
+            padding: 1.5rem;
+            text-align: center;
+            color: #856404;
+            background: #fff3cd;
+            border-radius: 5px;
         }
 
         .log-file {
@@ -169,44 +257,29 @@
             border: 1px solid #dee2e6;
             border-radius: 5px;
             overflow: hidden;
+            margin-left: 0;
+            padding-left: 0;
         }
 
         .match-header {
             background: #f1f3f4;
-            padding: 0.5rem 1rem;
+            padding: 0.5rem 1rem 0.5rem 0;
             font-size: 0.9rem;
             color: #6c757d;
         }
 
-        .context-lines {
+                .context-lines {
             font-family: 'Courier New', monospace;
             font-size: 0.85rem;
             background: #f8f9fa;
-        }
-
-        .context-line {
-            padding: 0.25rem 1rem;
-            border-bottom: 1px solid #e9ecef;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        .context-line:last-child {
-            border-bottom: none;
+            padding: 0 !important;
+            margin: 0 !important;
         }
 
         .context-line.match {
             background: #fff3cd;
-            border-left: 4px solid #ffc107;
+            border-left: 3px solid #ffc107;
             font-weight: 600;
-        }
-
-        .line-number {
-            color: #6c757d;
-            margin-right: 1rem;
-            font-weight: 600;
-            min-width: 60px;
-            display: inline-block;
         }
 
         .loading {
@@ -257,11 +330,33 @@
         .flex-row {
             display: flex;
             gap: 1rem;
-            align-items: end;
+            align-items: flex-end;
         }
 
         .flex-row .control-group {
             flex: 1;
+        }
+
+        .flex-row .control-group:last-child {
+            flex: 0 0 auto;
+        }
+
+        .bottom-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+
+        .bottom-controls .control-group:first-child {
+            flex: 0 0 200px;
+        }
+
+        .bottom-controls .control-group:last-child {
+            flex: 0 0 auto;
+        }
+
+        #timestamp {
+            max-width: 400px;
         }
 
         @media (max-width: 768px) {
@@ -287,10 +382,18 @@
         </header>
 
         <div class="control-panel">
-            <div class="control-group">
-                <label for="zipPath">📁 ZIP Files Directory Path</label>
-                <input type="text" id="zipPath" placeholder="Enter path to directory containing ZIP files (optional)">
-                <small>Leave empty to use default path specified when starting the application</small>
+            <div class="flex-row">
+                <div class="control-group">
+                    <label for="zipPath">📁 ZIP Files Directory Path</label>
+                    <input type="text" id="zipPath" placeholder="Enter path to directory containing ZIP files (optional)">
+                    <small>Leave empty to use default path specified when starting the application</small>
+                </div>
+                
+                <div class="control-group">
+                    <label for="extractPath">📂 Extraction Directory Path</label>
+                    <input type="text" id="extractPath" placeholder="Enter extraction directory (optional)">
+                    <small>Leave empty to use default work_data directory</small>
+                </div>
             </div>
             
             <div class="control-group">
@@ -298,13 +401,13 @@
                 <small>Automatically detect and extract all Couchbase collectinfo ZIP files</small>
             </div>
 
-            <div class="flex-row">
-                <div class="control-group">
-                    <label for="timestamp">🕐 Target Timestamp</label>
-                    <input type="text" id="timestamp" placeholder="2025-06-09T18:30:17.455783+00:00">
-                    <small>Enter timestamp in ISO format. Smart matching will reduce precision if needed.</small>
-                </div>
-                
+            <div class="control-group">
+                <label for="timestamp">🕐 Target Timestamp</label>
+                <input type="text" id="timestamp" placeholder="2025-06-09T19:05:32.644945+00:00">
+                <small>Enter timestamp in ISO format. Exact precision matching only.</small>
+            </div>
+            
+            <div class="bottom-controls">
                 <div class="control-group">
                     <label for="contextLines">📄 Context Lines</label>
                     <input type="number" id="contextLines" value="5" min="1" max="20">
@@ -328,6 +431,10 @@
             <div class="status-item">
                 <span>📋 Files with Matches: </span>
                 <span id="fileCount">0</span>
+            </div>
+            <div class="status-item">
+                <span>🎯 Target Files: </span>
+                <span id="targetFiles">diag.log, couchbase.log, memcached.log, ns_server.debug.log</span>
             </div>
         </div>
 
@@ -381,12 +488,16 @@
 
         async function detectZips() {
             const zipPath = document.getElementById('zipPath').value.trim();
+            const extractPath = document.getElementById('extractPath').value.trim();
             showLoading('Detecting and extracting ZIP files...');
             
             try {
                 const requestBody = {};
                 if (zipPath) {
                     requestBody.zip_path = zipPath;
+                }
+                if (extractPath) {
+                    requestBody.extract_path = extractPath;
                 }
                 
                 const response = await fetch('/api/detect-zips', {
@@ -401,7 +512,7 @@
                 hideLoading();
                 
                 if (data.success) {
-                    showMessage(`✅ Successfully extracted ${data.count} ZIP files from ${data.search_path}`, 'success');
+                    showMessage(`✅ Successfully extracted ${data.count} ZIP files from ${data.search_path} to ${data.extract_path}`, 'success');
                     updateStatus();
                 } else {
                     showMessage(`❌ Error: ${data.error}`, 'error');
@@ -465,26 +576,63 @@
                 return;
             }
             
-            let html = '';
+            // Create tabbed interface
+            let html = '<div class="tab-nav">';
             
-            Object.entries(results.nodes).forEach(([nodeName, nodeData]) => {
+            // Create tabs for each file type
+            results.summary.available_files.forEach((fileName, index) => {
+                const activeClass = index === 0 ? 'active' : '';
+                html += `
+                    <button class="tab-btn ${activeClass}" onclick="showTab('${fileName}')">
+                        📄 ${fileName}
+                    </button>
+                `;
+            });
+            
+            html += '</div>';
+            
+            // Create tab content for each file type
+            results.summary.available_files.forEach((fileName, index) => {
+                const activeClass = index === 0 ? 'active' : '';
+                html += `
+                    <div class="tab-content ${activeClass}" id="tab-${fileName}">
+                        ${generateFileComparison(fileName, results.by_file[fileName], results.nodes)}
+                    </div>
+                `;
+            });
+            
+            content.innerHTML = html;
+            container.style.display = 'block';
+        }
+
+        function generateFileComparison(fileName, fileData, allNodes) {
+            const nodeCount = Object.keys(allNodes).length;
+            let gridClass = 'single-node';
+            
+            if (nodeCount === 2) gridClass = 'two-nodes';
+            else if (nodeCount === 3) gridClass = 'three-nodes';
+            else if (nodeCount > 3) gridClass = 'many-nodes';
+            
+            let html = `<div class="file-comparison ${gridClass}">`;
+            
+            // Display each node's data for this file
+            Object.entries(allNodes).forEach(([nodeName, nodeData]) => {
                 html += `
                     <div class="node-section">
                         <div class="node-header">
-                            🖥️ Node: ${nodeName} (${nodeData.total_matches} matches)
+                            🖥️ ${nodeName}
                         </div>
-                        <div style="padding: 1rem;">
+                        <div class="node-content">
                 `;
                 
-                Object.entries(nodeData.log_files).forEach(([fileName, fileData]) => {
-                    html += `
-                        <div class="log-file">
-                            <div class="log-file-header">
-                                📄 ${fileName} (${fileData.matches.length} matches)
-                            </div>
-                    `;
-                    
-                    fileData.matches.forEach((match, matchIndex) => {
+                const nodeFileData = fileData[nodeName];
+                
+                if (nodeFileData && nodeFileData.file_missing) {
+                    html += `<div class="file-missing">📋 ${fileName} not found in this node</div>`;
+                } else if (nodeFileData && nodeFileData.no_matches) {
+                    html += `<div class="no-matches">📄 ${fileName} exists but no timestamp matches found</div>`;
+                } else if (nodeFileData && nodeFileData.matches && nodeFileData.matches.length > 0) {
+                    nodeFileData.matches.forEach((match, matchIndex) => {
                         html += `
                             <div class="log-match">
                                 <div class="match-header">
@@ -497,7 +645,7 @@
                             const lineClass = contextLine.is_match ? 'context-line match' : 'context-line';
                             html += `
                                 <div class="${lineClass}">
-                                    <span class="line-number">${contextLine.line_num}:</span>${escapeHtml(contextLine.content)}
+                                    ${escapeHtml(contextLine.content)}
                                 </div>
                             `;
                         });
@@ -507,9 +655,9 @@
                             </div>
                         `;
                     });
-                    
-                    html += '</div>';
-                });
+                } else {
+                    html += `<div class="file-missing">📋 ${fileName} not processed</div>`;
+                }
                 
                 html += `
                         </div>
@@ -517,8 +665,22 @@
                 `;
             });
             
-            content.innerHTML = html;
-            container.style.display = 'block';
+            html += '</div>';
+            return html;
+        }
+
+        function showTab(fileName) {
+            // Hide all tabs and remove active class
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab and add active class
+            document.getElementById(`tab-${fileName}`).classList.add('active');
+            event.target.classList.add('active');
         }
 
         function escapeHtml(text) {
