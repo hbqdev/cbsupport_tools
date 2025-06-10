@@ -17,7 +17,7 @@ import json
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from dateutil import parser as date_parser
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/static')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 
 class LogAnalyzer:
@@ -33,6 +33,17 @@ class LogAnalyzer:
             "memcached.log",
             "ns_server.debug.log"
         ]
+        # Check for existing extractions on startup
+        self._discover_existing_extractions()
+    
+    def _discover_existing_extractions(self):
+        """Discover any existing extracted directories."""
+        if self.work_dir.exists():
+            for item in self.work_dir.iterdir():
+                if item.is_dir() and any(self.find_log_files(str(item)).values()):
+                    self.extracted_dirs.append(str(item))
+            if self.extracted_dirs:
+                print(f"Found {len(self.extracted_dirs)} existing extracted directories")
         
     def detect_and_extract_zips(self, custom_path: str = None, custom_extract_path: str = None) -> List[str]:
         """Detect and extract all zip files in the specified directory."""
