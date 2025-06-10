@@ -33,20 +33,88 @@
                 <div><small>Automatically detect and extract all Couchbase collectinfo ZIP files</small></div>
             </div>
 
-            <div class="control-group">
-                <label for="timestamp">🕐 Target Timestamp</label>
-                <input type="text" id="timestamp" placeholder="2025-06-09T19:05:32.644945+00:00">
-                <div><small>Enter timestamp in ISO format. Exact precision matching only.</small></div>
-            </div>
-            
-            <div class="bottom-controls">
+            <div class="flex-row">
                 <div class="control-group">
-                    <label for="contextLines">📄 Context Lines</label>
-                    <input type="number" id="contextLines" value="5" min="1" max="20">
+                    <label for="s3Urls">☁️ S3 URLs for ZIP Files</label>
+                    <textarea id="s3Urls" rows="4" placeholder="Paste S3 URLs here, one per line:
+s3://bucket/path/to/collectinfo1.zip
+s3://bucket/path/to/collectinfo2.zip"></textarea>
+                    <div><small>Enter one or more S3 URLs, each on a separate line</small></div>
+                </div>
+
+                <div class="control-group">
+                    <label for="subfolderName">📁 Subfolder Name (Optional)</label>
+                    <input type="text" id="subfolderName" placeholder="e.g., Comcast, Production, etc.">
+                    <div><small>Creates a subfolder under extraction directory for organization</small></div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <button class="btn" onclick="downloadFromS3()">⬇️ Download & Extract from S3</button>
+                <div><small>Download ZIP files from S3 URLs and extract them</small></div>
+            </div>
+        </div>
+
+        <!-- File Browser & Selection Section -->
+        <div class="control-panel">
+            <div class="section-header" onclick="toggleSection('fileBrowser')">
+                <span>🗂️ Node Explorer & File Selection</span>
+                <span class="toggle-icon" id="fileBrowser-toggle">▼</span>
+            </div>
+            <div class="collapsible-content" id="fileBrowser-content">
+                <div class="control-group">
+                    <button class="btn" onclick="loadNodeExplorer()">🔄 Refresh Node Explorer</button>
+                    <div><small>Load or refresh the file browser for all extracted nodes</small></div>
                 </div>
                 
-                <div class="control-group">
-                    <button class="btn" onclick="analyzeLogs()">🔍 Analyze Logs</button>
+                <div id="nodeExplorer">
+                    <div class="loading" id="explorerLoading" style="display: none;">
+                        <div class="spinner"></div>
+                        <div>Loading node explorer...</div>
+                    </div>
+                    <div id="explorerContent"></div>
+                </div>
+                
+                <div class="file-selection-lists">
+                    <h4>📋 File Selection Lists</h4>
+                    <div class="selection-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="usePredefinedFiles" checked>
+                            <span id="predefinedFilesLabel">☑️ Predefined Files (loading...)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="useCustomFiles">
+                            <span>☐ Custom Selected Files (<span id="customFileCount">0</span> files selected)</span>
+                        </label>
+                    </div>
+                    <div id="customFilesList" class="custom-files-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analysis Configuration Section -->
+        <div class="control-panel">
+            <div class="section-header" onclick="toggleSection('analysisConfig')">
+                <span>🎯 Analysis Configuration</span>
+                <span class="toggle-icon" id="analysisConfig-toggle">▼</span>
+            </div>
+            <div class="collapsible-content" id="analysisConfig-content">
+                <div class="analysis-horizontal">
+                    <div class="control-group">
+                        <label for="timestamp">🕐 Target Timestamp</label>
+                        <input type="text" id="timestamp" placeholder="2025-06-09T19:05:32.644945+00:00">
+                        <div><small>Enter timestamp in ISO format. Exact precision matching only.</small></div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="contextLines">📄 Context Lines</label>
+                        <input type="number" id="contextLines" value="15" min="1" max="50">
+                        <div><small>Lines before/after matches</small></div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <button class="btn" onclick="analyzeLogs()">🔍 Analyze Logs</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -66,7 +134,7 @@
             </div>
             <div class="status-item">
                 <span>🎯 Target Files: </span>
-                <span id="targetFiles">diag.log, couchbase.log, memcached.log, ns_server.debug.log</span>
+                <span id="targetFiles">loading...</span>
             </div>
         </div>
 
@@ -79,6 +147,35 @@
             </div>
             <div class="results-content" id="resultsContent">
                 <!-- Results will be populated here -->
+            </div>
+        </div>
+
+        <!-- Interactive Log Viewer Modal -->
+        <div id="logViewerModal" class="log-viewer-modal" style="display: none;">
+            <div class="log-viewer-modal-content">
+                <div class="log-viewer-header">
+                    <span id="logViewerTitle">📄 Log Viewer</span>
+                    <span class="close-viewer" onclick="closeLogViewer()">&times;</span>
+                </div>
+                <div class="log-viewer-toolbar">
+                    <input type="text" id="logSearch" placeholder="Search in log..." style="width: 200px;">
+                    <button class="btn" onclick="searchInLog()">🔍 Search</button>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="interactiveMode">
+                        <span>Interactive Mode</span>
+                    </label>
+                </div>
+                <div class="log-viewer-content" id="logViewerContent">
+                    <!-- Log content will be populated here -->
+                </div>
+                <div class="log-viewer-controls" id="logViewerControls" style="display: none;">
+                    <button class="btn" onclick="navigateLog('first')">⏮️ First</button>
+                    <button class="btn" onclick="navigateLog('prev')">↑ Prev</button>
+                    <button class="btn" onclick="navigateLog('next')">↓ Next</button>
+                    <button class="btn" onclick="navigateLog('last')">⏭️ Last</button>
+                    <input type="number" id="gotoLine" placeholder="Line #" style="width: 80px;">
+                    <button class="btn" onclick="gotoLineNumber()">Go</button>
+                </div>
             </div>
         </div>
     </div>

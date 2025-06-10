@@ -9,6 +9,8 @@ import re
 import zipfile
 import glob
 import argparse
+import subprocess
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -28,10 +30,7 @@ class LogAnalyzer:
         self.extracted_dirs = []
         # Predefined list of log files to focus on
         self.target_files = [
-            "diag.log",
-            "couchbase.log", 
-            "memcached.log",
-            "ns_server.debug.log"
+            "diag.log"
         ]
         # Check for existing extractions on startup
         self._discover_existing_extractions()
@@ -57,14 +56,11 @@ class LogAnalyzer:
         for zip_file in zip_files:
             try:
                 with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                    # Create extraction directory
-                    extract_dir = extract_base_dir / Path(zip_file).stem
-                    extract_dir.mkdir(exist_ok=True)
-                    
-                    # Extract all files
-                    zip_ref.extractall(extract_dir)
-                    extracted.append(str(extract_dir))
-                    print(f"Extracted {zip_file} to {extract_dir}")
+                    # Extract directly to the base directory (work_data/subfolder)
+                    # The ZIP contents will create their own node directories
+                    zip_ref.extractall(extract_base_dir)
+                    extracted.append(str(extract_base_dir))
+                    print(f"Extracted {zip_file} to {extract_base_dir}")
                     
             except Exception as e:
                 print(f"Error extracting {zip_file}: {e}")
@@ -73,6 +69,67 @@ class LogAnalyzer:
             print(f"No ZIP files found in {search_path}")
                 
         self.extracted_dirs = extracted
+        return extracted
+    
+    def download_and_extract_from_s3(self, s3_urls: List[str], custom_extract_path: str = None, subfolder_name: str = None) -> List[str]:
+        """Download ZIP files from S3 URLs and extract them."""
+        extract_base_dir = Path(custom_extract_path) if custom_extract_path else self.work_dir
+        
+        # Create subfolder if specified
+        if subfolder_name:
+            extract_base_dir = extract_base_dir / subfolder_name
+        
+        extract_base_dir.mkdir(parents=True, exist_ok=True)
+        
+        extracted = []
+        
+        # Download and extract files from S3
+        for s3_url in s3_urls:
+            try:
+                # Extract filename from S3 URL
+                filename = s3_url.split('/')[-1]
+                local_zip_path = extract_base_dir / filename
+                
+                print(f"Downloading {s3_url} to {local_zip_path}")
+                
+                # Use AWS CLI to download directly to final location
+                result = subprocess.run([
+                    'aws', 's3', 'cp', s3_url, str(local_zip_path)
+                ], capture_output=True, text=True, check=True)
+                
+                if local_zip_path.exists():
+                    print(f"Successfully downloaded {filename}")
+                    
+                    # Extract the ZIP file directly using unzip command
+                    print(f"Extracting {local_zip_path} to {extract_base_dir}")
+                    unzip_result = subprocess.run([
+                        'unzip', '-o', str(local_zip_path), '-d', str(extract_base_dir)
+                    ], capture_output=True, text=True)
+                    
+                    if unzip_result.returncode == 0:
+                        print(f"Successfully extracted {filename}")
+                        extracted.append(str(extract_base_dir))
+                        
+                        # Clean up the ZIP file after extraction
+                        local_zip_path.unlink()
+                        print(f"Cleaned up {filename}")
+                    else:
+                        print(f"Error extracting {filename}: {unzip_result.stderr}")
+                        raise Exception(f"Failed to extract {filename}: {unzip_result.stderr}")
+                else:
+                    print(f"Failed to download {filename}")
+                    raise Exception(f"Download failed for {filename}")
+                        
+            except subprocess.CalledProcessError as e:
+                print(f"AWS CLI error downloading {s3_url}: {e.stderr}")
+                raise Exception(f"Failed to download {s3_url}: {e.stderr}")
+            except Exception as e:
+                print(f"Error processing {s3_url}: {e}")
+                raise
+        
+        # Update extracted_dirs list
+        if extracted:
+            self.extracted_dirs.extend(extracted)
         return extracted
     
     def find_log_files(self, directory: str) -> Dict[str, str]:
@@ -226,6 +283,270 @@ class LogAnalyzer:
         
         results['summary']['total_nodes'] = len(results['nodes'])
         return results
+    
+    def get_directory_contents(self, directory_path: str) -> List[Dict]:
+        """Get directory contents with file information."""
+        contents = []
+        try:
+            for item in os.listdir(directory_path):
+                item_path = os.path.join(directory_path, item)
+                stat = os.stat(item_path)
+                
+                contents.append({
+                    'name': item,
+                    'path': item_path,
+                    'is_directory': os.path.isdir(item_path),
+                    'size': stat.st_size if not os.path.isdir(item_path) else None,
+                    'modified': stat.st_mtime,
+                    'size_human': self.format_file_size(stat.st_size) if not os.path.isdir(item_path) else None
+                })
+        except Exception as e:
+            print(f"Error reading directory {directory_path}: {e}")
+            
+        # Sort: directories first, then files
+        contents.sort(key=lambda x: (not x['is_directory'], x['name'].lower()))
+        return contents
+    
+    def format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human readable format."""
+        if size_bytes == 0:
+            return "0B"
+        size_names = ["B", "KB", "MB", "GB"]
+        i = 0
+        while size_bytes >= 1024.0 and i < len(size_names) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        return f"{size_bytes:.1f}{size_names[i]}"
+    
+    def read_file_content(self, file_path: str, start_line: int = 1, lines_per_page: int = 100, search_term: str = None) -> Dict:
+        """Read file content with pagination and optional search."""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+            
+            total_lines = len(lines)
+            
+            # If search term provided, filter lines
+            if search_term:
+                filtered_lines = []
+                for i, line in enumerate(lines):
+                    if search_term.lower() in line.lower():
+                        filtered_lines.append({
+                            'line_number': i + 1,
+                            'content': line.rstrip(),
+                            'highlighted': True
+                        })
+                return {
+                    'lines': filtered_lines[:lines_per_page],  # Limit search results
+                    'total_lines': len(filtered_lines),
+                    'total_file_lines': total_lines,
+                    'search_term': search_term,
+                    'is_search': True
+                }
+            
+            # Regular pagination
+            end_line = min(start_line + lines_per_page - 1, total_lines)
+            start_idx = start_line - 1
+            end_idx = end_line
+            
+            page_lines = []
+            for i in range(start_idx, end_idx):
+                if i < total_lines:
+                    page_lines.append({
+                        'line_number': i + 1,
+                        'content': lines[i].rstrip(),
+                        'highlighted': False
+                    })
+            
+            return {
+                'lines': page_lines,
+                'start_line': start_line,
+                'end_line': end_line,
+                'total_lines': total_lines,
+                'has_more': end_line < total_lines,
+                'is_search': False
+            }
+            
+        except Exception as e:
+            raise Exception(f"Error reading file {file_path}: {e}")
+    
+    def execute_bash_search(self, command_type: str, file_paths: List[str], search_pattern: str, context_lines: int = 5) -> Dict:
+        """Execute bash commands for fast text processing."""
+        results = {}
+        
+        try:
+            for file_path in file_paths:
+                print(f"Processing file: {file_path}")  # Debug log
+                
+                original_file_path = file_path  # Keep original for results key
+                
+                # Ensure we have an absolute path
+                if not os.path.isabs(file_path):
+                    file_path = os.path.abspath(file_path)
+                    print(f"Converted to absolute path: {file_path}")  # Debug log
+                
+                if not os.path.exists(file_path):
+                    print(f"File not found: {file_path}")  # Debug log
+                    print(f"Current working directory: {os.getcwd()}")  # Debug log
+                    results[original_file_path] = {'error': f'File not found: {file_path}'}
+                    continue
+                
+                # Check file permissions
+                if not os.access(file_path, os.R_OK):
+                    print(f"File not readable: {file_path}")  # Debug log
+                    results[original_file_path] = {'error': f'File not readable: {file_path}'}
+                    continue
+                
+                # Get file info for results
+                try:
+                    # Extract node name more reliably
+                    path_parts = Path(file_path).parts
+                    node_name = path_parts[-2] if len(path_parts) > 1 else 'unknown'
+                    file_name = Path(file_path).name
+                    
+                    print(f"Node: {node_name}, File: {file_name}")  # Debug log
+                    
+                except Exception as e:
+                    print(f"Error parsing file path {file_path}: {e}")
+                    node_name = 'unknown'
+                    file_name = Path(file_path).name
+                
+                if command_type == 'grep':
+                    # Use grep for fast searching
+                    cmd = ['grep', '-n', '-i', f'-C{context_lines}', search_pattern, file_path]
+                elif command_type == 'timestamp_grep':
+                    # Special case for timestamp searching - use more flexible pattern matching
+                    # Use -F for fixed string matching to avoid regex issues
+                    cmd = ['grep', '-n', '-F', f'-C{context_lines}', search_pattern, file_path]
+                else:
+                    results[original_file_path] = {'error': f'Unsupported command type: {command_type}'}
+                    continue
+                
+                print(f"Executing command: {' '.join(cmd)}")  # Debug log
+                print(f"Search pattern being used: '{search_pattern}'")  # Debug log
+                
+                try:
+                    # Change to the directory containing the file for relative path issues
+                    file_dir = os.path.dirname(file_path)
+                    if not file_dir:
+                        file_dir = '.'
+                        
+                    result = subprocess.run(
+                        cmd, 
+                        capture_output=True, 
+                        text=True, 
+                        timeout=30,
+                        cwd=file_dir if os.path.exists(file_dir) else None
+                    )
+                    
+                    print(f"Command return code: {result.returncode}")  # Debug log
+                    print(f"Command stdout length: {len(result.stdout)}")  # Debug log
+                    if result.stderr:
+                        print(f"Command stderr: {result.stderr}")  # Debug log
+                    
+                    if result.returncode == 0:
+                        # Parse grep output
+                        matches = self.parse_grep_output(result.stdout, search_pattern)
+                        results[original_file_path] = {
+                            'node_name': node_name,
+                            'file_name': file_name,
+                            'matches': matches,
+                            'match_count': len(matches)
+                        }
+                        print(f"Found {len(matches)} matches")  # Debug log
+                    elif result.returncode == 1:
+                        # No matches found (normal for grep)
+                        results[original_file_path] = {
+                            'node_name': node_name,
+                            'file_name': file_name,
+                            'matches': [],
+                            'match_count': 0
+                        }
+                        print("No matches found")  # Debug log
+                    else:
+                        # Error
+                        error_msg = result.stderr.strip() if result.stderr else f'Command failed with return code {result.returncode}'
+                        results[original_file_path] = {'error': error_msg}
+                        print(f"Command error: {error_msg}")  # Debug log
+                        
+                except subprocess.TimeoutExpired:
+                    results[original_file_path] = {'error': 'Command timeout'}
+                    print("Command timed out")  # Debug log
+                except Exception as e:
+                    results[original_file_path] = {'error': str(e)}
+                    print(f"Exception during command execution: {e}")  # Debug log
+                    
+        except Exception as e:
+            print(f"Error in execute_bash_search: {e}")  # Debug log
+            raise Exception(f"Error executing bash command: {e}")
+            
+        return results
+    
+    def parse_grep_output(self, grep_output: str, search_pattern: str) -> List[Dict]:
+        """Parse grep output into structured matches."""
+        if not grep_output.strip():
+            return []
+            
+        matches = []
+        lines = grep_output.strip().split('\n')
+        
+        current_match = None
+        context_lines = []
+        
+        print(f"Parsing grep output with {len(lines)} lines")  # Debug log
+        
+        for line in lines:
+            if line.startswith('--'):
+                # Separator between matches - save current match
+                if current_match and context_lines:
+                    current_match['context_lines'] = context_lines
+                    matches.append(current_match)
+                current_match = None
+                context_lines = []
+                continue
+                
+            # Parse line number and content
+            if ':' in line:
+                # Matching line (grep uses : for actual matches)
+                parts = line.split(':', 1)
+                if len(parts) == 2 and parts[0].isdigit():
+                    line_num = int(parts[0])
+                    content = parts[1]
+                    
+                    # This is an actual match line
+                    if not current_match:
+                        current_match = {
+                            'line_number': line_num,
+                            'matched_line': content.strip(),
+                            'context_lines': []
+                        }
+                    
+                    context_lines.append({
+                        'line_num': line_num,
+                        'content': content.strip(),
+                        'is_match': True
+                    })
+                    
+            elif '-' in line:
+                # Context line (grep uses - for context lines)
+                parts = line.split('-', 1)
+                if len(parts) == 2 and parts[0].isdigit():
+                    line_num = int(parts[0])
+                    content = parts[1]
+                    
+                    context_lines.append({
+                        'line_num': line_num,
+                        'content': content.strip(),
+                        'is_match': False
+                    })
+        
+        # Add the last match
+        if current_match and context_lines:
+            current_match['context_lines'] = context_lines
+            matches.append(current_match)
+        
+        print(f"Parsed {len(matches)} matches")  # Debug log
+        return matches
 
 # Global analyzer instance - will be initialized with command line args
 analyzer = None
@@ -282,12 +603,221 @@ def analyze():
             'error': str(e)
         }), 500
 
+@app.route('/api/download-s3', methods=['POST'])
+def download_s3():
+    """Download and extract ZIP files from S3 URLs."""
+    try:
+        data = request.get_json()
+        s3_urls = data.get('s3_urls', [])
+        custom_extract_path = data.get('extract_path')
+        subfolder_name = data.get('subfolder_name')
+        
+        if not s3_urls:
+            return jsonify({
+                'success': False,
+                'error': 'At least one S3 URL is required'
+            }), 400
+        
+        # Validate S3 URLs
+        for url in s3_urls:
+            if not url.startswith('s3://'):
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid S3 URL: {url}. URLs must start with s3://'
+                }), 400
+        
+        extracted = analyzer.download_and_extract_from_s3(s3_urls, custom_extract_path, subfolder_name)
+        
+        # Determine final extract path for response
+        extract_base_dir = Path(custom_extract_path) if custom_extract_path else analyzer.work_dir
+        if subfolder_name:
+            extract_base_dir = extract_base_dir / subfolder_name
+            
+        return jsonify({
+            'success': True,
+            'extracted_dirs': extracted,
+            'count': len(extracted),
+            'extract_path': str(extract_base_dir),
+            's3_urls': s3_urls
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/browse-files', methods=['POST'])
+def browse_files():
+    """Browse files in extracted directories."""
+    try:
+        data = request.get_json() or {}
+        node_path = data.get('node_path')
+        
+        if not node_path:
+            # Return all nodes - look in work_data/subfolder structure
+            nodes = {}
+            
+            # Check work_data directory structure
+            work_data_path = os.path.join(os.getcwd(), 'work_data')
+            print(f"Looking for nodes in: {work_data_path}")  # Debug log
+            
+            if os.path.exists(work_data_path):
+                # Look for subdirectories in work_data
+                for item in os.listdir(work_data_path):
+                    subfolder_path = os.path.join(work_data_path, item)
+                    if os.path.isdir(subfolder_path):
+                        print(f"Found subfolder: {subfolder_path}")  # Debug log
+                        
+                        # Look for any directories inside this subfolder
+                        for node_item in os.listdir(subfolder_path):
+                            node_path = os.path.join(subfolder_path, node_item)
+                            if os.path.isdir(node_path):
+                                print(f"Found directory: {node_path}")  # Debug log
+                                
+                                # Use the directory name as the node name
+                                node_name = node_item
+                                nodes[node_name] = {
+                                    'path': node_path,
+                                    'contents': analyzer.get_directory_contents(node_path)
+                                }
+            
+            # Also check analyzer.extracted_dirs for any directly extracted directories
+            for extract_dir in analyzer.extracted_dirs:
+                if os.path.exists(extract_dir):
+                    node_name = Path(extract_dir).name
+                    if node_name not in nodes:  # Don't overwrite existing
+                        nodes[node_name] = {
+                            'path': extract_dir,
+                            'contents': analyzer.get_directory_contents(extract_dir)
+                        }
+            
+            print(f"Found {len(nodes)} nodes")  # Debug log
+            return jsonify({
+                'success': True,
+                'nodes': nodes
+            })
+        else:
+            # Return specific directory contents
+            contents = analyzer.get_directory_contents(node_path)
+            return jsonify({
+                'success': True,
+                'contents': contents
+            })
+            
+    except Exception as e:
+        print(f"Error in browse_files: {e}")  # Debug log
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/view-file', methods=['POST'])
+def view_file():
+    """View file content with pagination."""
+    try:
+        data = request.get_json()
+        file_path = data.get('file_path')
+        start_line = data.get('start_line', 1)
+        lines_per_page = data.get('lines_per_page', 100)
+        search_term = data.get('search_term')
+        
+        if not file_path or not os.path.exists(file_path):
+            return jsonify({
+                'success': False,
+                'error': 'File not found'
+            }), 400
+            
+        content = analyzer.read_file_content(file_path, start_line, lines_per_page, search_term)
+        return jsonify({
+            'success': True,
+            'content': content
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/execute-command', methods=['POST'])
+def execute_command():
+    """Execute bash command for fast text processing."""
+    try:
+        data = request.get_json()
+        print(f"Execute command received data: {data}")  # Debug log
+        
+        command_type = data.get('command_type')  # 'grep', 'awk', etc.
+        file_paths = data.get('file_paths', [])
+        search_pattern = data.get('search_pattern')
+        context_lines = data.get('context_lines', 5)
+        
+        print(f"Command type: {command_type}, File paths: {len(file_paths)}, Search pattern: '{search_pattern}'")  # Debug log
+        print(f"File paths: {file_paths}")  # Debug log
+        
+        if not command_type:
+            return jsonify({
+                'success': False,
+                'error': 'Missing command_type parameter'
+            }), 400
+            
+        if not file_paths:
+            return jsonify({
+                'success': False,
+                'error': 'Missing file_paths parameter'
+            }), 400
+            
+        if not search_pattern:
+            return jsonify({
+                'success': False,
+                'error': 'Missing search_pattern parameter'
+            }), 400
+            
+        results = analyzer.execute_bash_search(command_type, file_paths, search_pattern, context_lines)
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/status')
 def status():
     """Get current status of extracted directories."""
+    # Count actual nodes using the same logic as browse_files
+    nodes = {}
+    
+    # Check work_data directory structure  
+    work_data_path = os.path.join(os.getcwd(), 'work_data')
+    
+    if os.path.exists(work_data_path):
+        # Look for subdirectories in work_data
+        for item in os.listdir(work_data_path):
+            subfolder_path = os.path.join(work_data_path, item)
+            if os.path.isdir(subfolder_path):
+                # Look for any directories inside this subfolder
+                for node_item in os.listdir(subfolder_path):
+                    node_path = os.path.join(subfolder_path, node_item)
+                    if os.path.isdir(node_path):
+                        # Use the directory name as the node name
+                        node_name = node_item
+                        nodes[node_name] = node_path
+    
+    # Also check analyzer.extracted_dirs for any directly extracted directories
+    for extract_dir in analyzer.extracted_dirs:
+        if os.path.exists(extract_dir):
+            node_name = Path(extract_dir).name
+            if node_name not in nodes:  # Don't overwrite existing
+                nodes[node_name] = extract_dir
+    
     return jsonify({
-        'extracted_dirs': analyzer.extracted_dirs,
-        'count': len(analyzer.extracted_dirs)
+        'extracted_dirs': list(nodes.values()),
+        'count': len(nodes),
+        'target_files': analyzer.target_files
     })
 
 def main():
