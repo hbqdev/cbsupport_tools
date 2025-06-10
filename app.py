@@ -413,11 +413,15 @@ class LogAnalyzer:
                 
                 if command_type == 'grep':
                     # Use grep for fast searching
-                    cmd = ['grep', '-n', '-i', f'-C{context_lines}', search_pattern, file_path]
+                    # Use absolute path and quote it to handle @ symbols in directory names
+                    abs_file_path = os.path.abspath(file_path)
+                    cmd = ['grep', '-i', f'-C{context_lines}', search_pattern, abs_file_path]
                 elif command_type == 'timestamp_grep':
                     # Special case for timestamp searching - use more flexible pattern matching
                     # Use -F for fixed string matching to avoid regex issues
-                    cmd = ['grep', '-n', '-F', f'-C{context_lines}', search_pattern, file_path]
+                    # Use absolute path and quote it to handle @ symbols in directory names
+                    abs_file_path = os.path.abspath(file_path)
+                    cmd = ['grep', '-F', f'-C{context_lines}', search_pattern, abs_file_path]
                 else:
                     results[original_file_path] = {'error': f'Unsupported command type: {command_type}'}
                     continue
@@ -426,21 +430,18 @@ class LogAnalyzer:
                 print(f"Search pattern being used: '{search_pattern}'")  # Debug log
                 
                 try:
-                    # Change to the directory containing the file for relative path issues
-                    file_dir = os.path.dirname(file_path)
-                    if not file_dir:
-                        file_dir = '.'
-                        
+                    # Run the command with absolute paths to avoid @ symbol issues
                     result = subprocess.run(
                         cmd, 
                         capture_output=True, 
                         text=True, 
-                        timeout=30,
-                        cwd=file_dir if os.path.exists(file_dir) else None
+                        timeout=30
                     )
                     
                     print(f"Command return code: {result.returncode}")  # Debug log
                     print(f"Command stdout length: {len(result.stdout)}")  # Debug log
+                    if result.stdout:
+                        print(f"First 500 chars of grep output: {result.stdout[:500]}")  # Debug log
                     if result.stderr:
                         print(f"Command stderr: {result.stderr}")  # Debug log
                     
@@ -454,6 +455,10 @@ class LogAnalyzer:
                             'match_count': len(matches)
                         }
                         print(f"Found {len(matches)} matches")  # Debug log
+                        if matches:
+                            print(f"First match context lines count: {len(matches[0].get('context_lines', []))}")  # Debug log
+                            for i, context_line in enumerate(matches[0].get('context_lines', [])[:5]):  # Show first 5 context lines
+                                print(f"  Context line {i}: is_match={context_line.get('is_match')}, content='{context_line.get('content', '')[:50]}...'")  # Debug log
                     elif result.returncode == 1:
                         # No matches found (normal for grep)
                         results[original_file_path] = {
@@ -483,69 +488,18 @@ class LogAnalyzer:
         return results
     
     def parse_grep_output(self, grep_output: str, search_pattern: str) -> List[Dict]:
-        """Parse grep output into structured matches."""
+        """Parse grep output into structured matches - simplified for raw display."""
         if not grep_output.strip():
             return []
             
-        matches = []
-        lines = grep_output.strip().split('\n')
+        # Just return the raw grep output as a single match for simple display
+        matches = [{
+            'line_number': 1,
+            'matched_line': 'Raw grep output',
+            'raw_output': grep_output.strip()
+        }]
         
-        current_match = None
-        context_lines = []
-        
-        print(f"Parsing grep output with {len(lines)} lines")  # Debug log
-        
-        for line in lines:
-            if line.startswith('--'):
-                # Separator between matches - save current match
-                if current_match and context_lines:
-                    current_match['context_lines'] = context_lines
-                    matches.append(current_match)
-                current_match = None
-                context_lines = []
-                continue
-                
-            # Parse line number and content
-            if ':' in line:
-                # Matching line (grep uses : for actual matches)
-                parts = line.split(':', 1)
-                if len(parts) == 2 and parts[0].isdigit():
-                    line_num = int(parts[0])
-                    content = parts[1]
-                    
-                    # This is an actual match line
-                    if not current_match:
-                        current_match = {
-                            'line_number': line_num,
-                            'matched_line': content.strip(),
-                            'context_lines': []
-                        }
-                    
-                    context_lines.append({
-                        'line_num': line_num,
-                        'content': content.strip(),
-                        'is_match': True
-                    })
-                    
-            elif '-' in line:
-                # Context line (grep uses - for context lines)
-                parts = line.split('-', 1)
-                if len(parts) == 2 and parts[0].isdigit():
-                    line_num = int(parts[0])
-                    content = parts[1]
-                    
-                    context_lines.append({
-                        'line_num': line_num,
-                        'content': content.strip(),
-                        'is_match': False
-                    })
-        
-        # Add the last match
-        if current_match and context_lines:
-            current_match['context_lines'] = context_lines
-            matches.append(current_match)
-        
-        print(f"Parsed {len(matches)} matches")  # Debug log
+        print(f"Returning raw grep output with {len(grep_output.strip().split())} lines")  # Debug log
         return matches
 
 # Global analyzer instance - will be initialized with command line args
@@ -774,6 +728,18 @@ def execute_command():
             }), 400
             
         results = analyzer.execute_bash_search(command_type, file_paths, search_pattern, context_lines)
+        
+        # Debug: Print the structure being sent to frontend
+        for file_path, result in results.items():
+            if 'matches' in result and result['matches']:
+                print(f"DEBUG: Sending to frontend - {file_path}")
+                print(f"  Match count: {len(result['matches'])}")
+                for i, match in enumerate(result['matches'][:1]):  # Show first match
+                    print(f"  Match {i}: line {match.get('line_number')}")
+                    print(f"    Context lines count: {len(match.get('context_lines', []))}")
+                    for j, ctx in enumerate(match.get('context_lines', [])[:3]):  # Show first 3 context lines
+                        print(f"      Context {j}: is_match={ctx.get('is_match')}, line={ctx.get('line_num')}, content='{ctx.get('content', '')[:50]}...'")
+        
         return jsonify({
             'success': True,
             'results': results

@@ -727,6 +727,8 @@ function displayBashResults(results, timestamp) {
     const content = document.getElementById('resultsContent');
     const timestampSpan = document.getElementById('resultsTimestamp');
     
+    console.log('Frontend received results:', results); // Debug log
+    
     timestampSpan.textContent = `Target: ${timestamp} (Bash Processing)`;
     
     let html = '<div class="bash-results">';
@@ -749,25 +751,25 @@ function displayBashResults(results, timestamp) {
                 `;
                 
                 if (result.matches && result.matches.length > 0) {
-                    result.matches.forEach(match => {
-                        html += `
-                            <div class="log-match">
-                                <div class="match-header">
-                                    Line ${match.line_number}
-                                </div>
-                                <div class="context-lines">
-                        `;
+                    result.matches.forEach((match, matchIndex) => {
+                        console.log('Processing match:', match); // Debug log
                         
-                        match.context_lines.forEach(contextLine => {
-                            const lineClass = contextLine.is_match ? 'context-line match' : 'context-line';
-                            html += `
-                                <div class="${lineClass}">
-                                    ${escapeHtml(contextLine.content)}
-                                </div>
-                            `;
-                        });
+                        // Display the raw grep output directly
+                        html += '<pre style="background: #f8f9fa; padding: 10px; margin: 10px 0; white-space: pre-wrap; font-family: monospace; font-size: 12px; line-height: 1.4;">';
                         
-                        html += '</div></div>';
+                        if (match.raw_output) {
+                            // Just display the raw grep output exactly as the terminal shows it
+                            html += escapeHtml(match.raw_output);
+                        } else {
+                            html += 'No output available\n';
+                        }
+                        
+                        html += '</pre>';
+                        
+                        // Add separator between matches
+                        if (matchIndex < result.matches.length - 1) {
+                            html += '<hr style="margin: 20px 0; border: 2px solid #007bff;">';
+                        }
                     });
                 } else {
                     html += '<div class="no-matches">No matches found in this file</div>';
