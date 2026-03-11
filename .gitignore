@@ -193,5 +193,3 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .zip
-.factory/
-.factory
