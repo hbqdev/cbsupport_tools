@@ -1,0 +1,530 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Couchbase Ticket Analysis Metadata",
+  "description": "Structured output from couchbase-ticket-analyzer agent for machine processing",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "ticket_number": {
+          "type": "string",
+          "description": "Support ticket number"
+        },
+        "analysis_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this analysis was performed (ISO 8601)"
+        },
+        "agent_version": {
+          "type": "string",
+          "description": "Version of the analysis agent"
+        },
+        "analysis_duration_seconds": {
+          "type": "number",
+          "description": "How long the analysis took"
+        }
+      },
+      "required": ["ticket_number", "analysis_timestamp", "agent_version"]
+    },
+    
+    "ticket_info": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string",
+          "description": "Ticket subject line"
+        },
+        "customer_description": {
+          "type": "string",
+          "description": "Customer's description of the issue"
+        },
+        "issue_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the issue occurred (customer reported)"
+        },
+        "timezone": {
+          "type": "string",
+          "description": "Timezone of the issue timestamp"
+        },
+        "customer_version": {
+          "type": "string",
+          "description": "Couchbase Server version (e.g., 7.6.0-1234)"
+        },
+        "cluster_size": {
+          "type": "integer",
+          "description": "Number of nodes in cluster"
+        },
+        "affected_nodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of node IPs or hostnames affected"
+        },
+        "snapshot_count": {
+          "type": "integer",
+          "description": "Number of cbcollect snapshots available"
+        }
+      },
+      "required": ["subject", "issue_timestamp"]
+    },
+    
+    "classification": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "type": "string",
+          "enum": [
+            "KV",
+            "Query",
+            "Index",
+            "XDCR",
+            "Views",
+            "FTS",
+            "Analytics",
+            "Eventing",
+            "Cluster Management",
+            "Backup",
+            "Network",
+            "Multi-Component",
+            "Unknown"
+          ],
+          "description": "Primary affected component"
+        },
+        "issue_type": {
+          "type": "string",
+          "description": "Type of issue (e.g., OOM, crash, timeout, performance)"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low"],
+          "description": "Assessed severity level"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "Confidence in the analysis"
+        },
+        "classification_reasoning": {
+          "type": "string",
+          "description": "Why this classification was chosen"
+        }
+      },
+      "required": ["component", "issue_type", "confidence"]
+    },
+    
+    "root_cause": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "One-sentence root cause summary"
+        },
+        "detailed_explanation": {
+          "type": "string",
+          "description": "Detailed root cause explanation"
+        },
+        "trigger_event": {
+          "type": "object",
+          "properties": {
+            "timestamp": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": {
+              "type": "string"
+            },
+            "source_log": {
+              "type": "string"
+            }
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Log file name or source"
+              },
+              "node": {
+                "type": "string",
+                "description": "Node identifier"
+              },
+              "line_number": {
+                "type": "integer",
+                "description": "Line number in log file"
+              },
+              "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When this log entry occurred"
+              },
+              "excerpt": {
+                "type": "string",
+                "description": "Relevant log excerpt"
+              },
+              "interpretation": {
+                "type": "string",
+                "description": "What this evidence means"
+              }
+            },
+            "required": ["source", "excerpt"]
+          },
+          "description": "Array of evidence supporting root cause"
+        }
+      },
+      "required": ["summary", "evidence"]
+    },
+    
+    "logs_analyzed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Log file name"
+          },
+          "node": {
+            "type": "string",
+            "description": "Node identifier"
+          },
+          "file_path": {
+            "type": "string",
+            "description": "Full path to log file"
+          },
+          "patterns_searched": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Search patterns used"
+          },
+          "occurrences": {
+            "type": "integer",
+            "description": "Number of pattern matches found"
+          },
+          "time_window": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "required": ["file", "patterns_searched"]
+      },
+      "description": "List of all logs analyzed"
+    },
+    
+    "documentation_references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["docs", "mb", "kb", "forum", "other"],
+            "description": "Type of documentation"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to documentation"
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title"
+          },
+          "id": {
+            "type": "string",
+            "description": "Document ID (e.g., MB-12345)"
+          },
+          "relevance": {
+            "type": "string",
+            "description": "Why this doc is relevant"
+          },
+          "key_finding": {
+            "type": "string",
+            "description": "Key information from this source"
+          }
+        },
+        "required": ["type", "url", "relevance"]
+      },
+      "description": "Documentation consulted during analysis"
+    },
+    
+    "recommended_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "priority": {
+            "type": "string",
+            "enum": ["immediate", "investigation", "longterm"],
+            "description": "Action priority"
+          },
+          "action": {
+            "type": "string",
+            "description": "What to do"
+          },
+          "command": {
+            "type": "string",
+            "description": "Exact command to run (if applicable)"
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Why this action is needed"
+          },
+          "expected_result": {
+            "type": "string",
+            "description": "What should happen when action is taken"
+          },
+          "risk": {
+            "type": "string",
+            "enum": ["none", "low", "medium", "high"],
+            "description": "Risk level of this action"
+          }
+        },
+        "required": ["priority", "action"]
+      },
+      "description": "Recommended actions to take"
+    },
+    
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "event": {
+            "type": "string",
+            "description": "What happened"
+          },
+          "component": {
+            "type": "string",
+            "description": "Which component"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warning", "error", "critical"]
+          },
+          "source": {
+            "type": "string",
+            "description": "Log file or source of this event"
+          }
+        },
+        "required": ["timestamp", "event"]
+      },
+      "description": "Chronological timeline of events"
+    },
+    
+    "cross_node_analysis": {
+      "type": "object",
+      "properties": {
+        "is_cluster_wide": {
+          "type": "boolean",
+          "description": "Whether issue affects entire cluster"
+        },
+        "node_comparison": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "error_count": {
+                "type": "integer"
+              },
+              "first_occurrence": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "pattern": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "conclusion": {
+          "type": "string",
+          "description": "Summary of cross-node findings"
+        }
+      }
+    },
+    
+    "related_tickets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ticket_number": {
+            "type": "string"
+          },
+          "similarity_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Similarity percentage"
+          },
+          "common_patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "differences": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Analysis of related tickets"
+    },
+    
+    "customer_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why we need this information"
+          }
+        }
+      },
+      "description": "Questions to ask customer for clarification"
+    },
+    
+    "statistics": {
+      "type": "object",
+      "properties": {
+        "total_logs_analyzed": {
+          "type": "integer"
+        },
+        "total_log_lines_scanned": {
+          "type": "integer"
+        },
+        "search_patterns_used": {
+          "type": "integer"
+        },
+        "documentation_pages_consulted": {
+          "type": "integer"
+        },
+        "total_error_occurrences": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  
+  "required": [
+    "metadata",
+    "ticket_info",
+    "classification",
+    "root_cause",
+    "logs_analyzed",
+    "recommended_actions"
+  ],
+  
+  "example": {
+    "metadata": {
+      "ticket_number": "75546",
+      "analysis_timestamp": "2026-03-11T15:30:00Z",
+      "agent_version": "1.0",
+      "analysis_duration_seconds": 180
+    },
+    "ticket_info": {
+      "subject": "Node auto-failover due to OOM",
+      "customer_description": "Node 10.0.1.5 failed over automatically around 2PM today",
+      "issue_timestamp": "2026-03-11T14:23:45Z",
+      "timezone": "UTC",
+      "customer_version": "7.6.0-1234",
+      "cluster_size": 5,
+      "affected_nodes": ["10.0.1.5"],
+      "snapshot_count": 1
+    },
+    "classification": {
+      "component": "KV",
+      "issue_type": "OOM",
+      "severity": "critical",
+      "confidence": "high",
+      "classification_reasoning": "Keywords 'OOM' and 'failover' indicate memory exhaustion in KV engine"
+    },
+    "root_cause": {
+      "summary": "Memory exhaustion due to undersized bucket quota for workload",
+      "detailed_explanation": "The bucket memory quota was set to 4GB but the working set required 6GB, causing sustained memory pressure and eventual OOM errors leading to node health check failure and auto-failover.",
+      "trigger_event": {
+        "timestamp": "2026-03-11T14:23:42.123Z",
+        "description": "Memory allocation failed in memcached",
+        "source_log": "memcached.log"
+      },
+      "evidence": [
+        {
+          "source": "memcached.log",
+          "node": "10.0.1.5",
+          "line_number": 4532,
+          "timestamp": "2026-03-11T14:23:42.123Z",
+          "excerpt": "[ERROR] Memory allocation failed: bucket=default",
+          "interpretation": "KV engine could not allocate memory for incoming operations"
+        }
+      ]
+    },
+    "logs_analyzed": [
+      {
+        "file": "memcached.log",
+        "node": "10.0.1.5",
+        "file_path": "/tickets/75546/snapshot_10.0.1.5/logs/memcached.log",
+        "patterns_searched": ["out of memory", "OOM", "eviction"],
+        "occurrences": 15,
+        "time_window": {
+          "start": "2026-03-11T14:21:00Z",
+          "end": "2026-03-11T14:25:00Z"
+        }
+      }
+    ],
+    "documentation_references": [
+      {
+        "type": "docs",
+        "url": "https://docs.couchbase.com/server/current/learn/buckets-memory-and-storage/memory.html",
+        "title": "Memory Management",
+        "relevance": "Explains bucket memory quota and eviction policies"
+      }
+    ],
+    "recommended_actions": [
+      {
+        "priority": "immediate",
+        "action": "Increase bucket memory quota to 8GB",
+        "command": "curl -X POST http://10.0.1.5:8091/pools/default/buckets/default -u admin:password -d ramQuotaMB=8192",
+        "purpose": "Prevent future OOM events",
+        "expected_result": "Bucket quota increased, node stabilizes",
+        "risk": "low"
+      }
+    ],
+    "timeline": [
+      {
+        "timestamp": "2026-03-11T14:23:42.123Z",
+        "event": "Memory allocation failed",
+        "component": "KV",
+        "severity": "error",
+        "source": "memcached.log"
+      }
+    ]
+  }
+}
