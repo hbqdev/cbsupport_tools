@@ -41,6 +41,18 @@
 #   - Must be able to reach supportal.couchbase.com (may require VPN)
 #
 ###############################################################################
+# LOAD ENVIRONMENT CONFIGURATION
+###############################################################################
+
+# Load .env file if it exists (machine-specific configuration)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a  # automatically export all variables
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+###############################################################################
 # CONFIGURATION - Edit these to match your environment
 ###############################################################################
 
