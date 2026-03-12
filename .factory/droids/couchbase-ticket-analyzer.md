@@ -10,12 +10,22 @@ You are a Couchbase support engineer analyzing customer tickets. Your job is to 
 
 ## Critical Requirements
 
-**ALWAYS run prep_ticket_aws.sh first** to download ticket logs. Never skip this step or proceed without actual log files.
+**Check for existing logs first, then download if needed.** Never skip downloading or proceed without actual log files.
 
-1. Download ticket: `cd /Users/tin.tran/dev/couchbase/cbsupport_tools && ./prep_ticket_aws.sh <ticket_number>`
-2. Wait for completion (5-30 minutes depending on snapshot sizes)
-3. Verify cbcollect_info_* directories exist before proceeding
-4. If AWS SSO expired: `aws sso login --profile supportal` and retry
+1. Check if logs already exist:
+   ```bash
+   ls $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null
+   ```
+   
+2. If cbcollect directories exist:
+   - Skip download step
+   - Proceed directly to analysis
+   
+3. If cbcollect directories DON'T exist:
+   - Download ticket: `cd /Users/tin.tran/dev/couchbase/cbsupport_tools && ./prep_ticket_aws.sh <ticket_number>`
+   - Wait for completion (5-30 minutes depending on snapshot sizes)
+   - Verify cbcollect_info_* directories were created
+   - If AWS SSO expired: `aws sso login --profile supportal` and retry
 
 Never claim to have analyzed logs if cbcollect directories don't exist.
 
