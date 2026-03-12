@@ -40,6 +40,22 @@ Read `$DIR_TICKETS/<ticket_number>/ticket_timeline.json` and extract:
 - Error messages mentioned
 - Environment details
 
+**Check for ticket_files** (customer-uploaded SDK/application logs):
+```bash
+ls $DIR_TICKETS/<ticket_number>/ticket_files/
+```
+
+If ticket_files directory contains files:
+- These are usually SDK logs, application logs, or stack traces
+- Analyze them for client-side errors (SDK timeouts, connection errors, exceptions)
+- Correlate SDK error timestamps with server-side log events
+- Look for patterns: retries, connection pool exhaustion, authentication failures
+
+If ticket_files is empty but raw ticket shows uploaded files:
+- Note that files exist but weren't downloaded (likely AWS SSO expired)
+- Document this limitation in the report
+- May need to re-run prep_ticket_aws.sh after re-authenticating
+
 ### 2. Identify Components
 
 Map issue keywords to components and their log files:
@@ -66,7 +82,9 @@ Document what each error means, known causes, and which versions are affected.
 
 ### 4. Analyze Logs with Timestamp Precision
 
-**Critical**: Use ±2 minute window around issue timestamp (extend only if customer indicates prolonged issue).
+**A. Server-side logs (cbcollect)**
+
+Use ±2 minute window around issue timestamp (extend only if customer indicates prolonged issue).
 
 For each relevant log file:
 ```bash
@@ -85,6 +103,21 @@ For multi-node clusters:
 - Compare: node-specific vs cluster-wide
 - Identify which node triggered the issue
 
+**B. Client-side logs (ticket_files)**
+
+If SDK/application logs exist in ticket_files:
+```bash
+# Search for common SDK errors
+rg -iN "timeout|exception|error|failed" ticket_files/*.txt
+rg -iN "UnAmbiguousTimeoutException|AmbiguousTimeoutException" ticket_files/*.log
+```
+
+**Correlate client and server**:
+- Match SDK error timestamps with server log timestamps
+- SDK timeout at 14:23:45 → check server logs at 14:23:43-14:23:47
+- Look for: slow operations, high latency, connection resets
+- Determine if issue is client-side (network, app) or server-side (CB cluster)
+
 ### 5. Generate Reports
 
 Create **both** outputs in `$DIR_TICKETS/<ticket_number>/`:
@@ -93,8 +126,9 @@ Create **both** outputs in `$DIR_TICKETS/<ticket_number>/`:
 - Executive summary with root cause and confidence level
 - Ticket overview (customer issue, timestamp, environment)
 - Documentation research (links and findings)
-- Log analysis with exact excerpts and line numbers
-- Timeline of events
+- Server-side log analysis with exact excerpts and line numbers
+- Client-side log analysis (SDK/application logs from ticket_files if available)
+- Timeline of events (correlating client and server events)
 - Recommended actions (immediate + investigation + long-term)
 
 **analysis_metadata.json** (machine-readable):
@@ -130,6 +164,7 @@ If provided, use `./extract_ticket_timeline.sh <ticket>` to compare patterns acr
 - If prep_ticket_aws.sh fails: Check VPN connection and AWS credentials
 - If cbcollect directories missing after download: Check `snapshot` and `snapshot_files` - may need to re-authenticate
 - If no snapshots uploaded: Document in report, mark confidence as LOW, recommend customer upload cbcollect
+- If ticket_files directory is empty but files were uploaded: Note AWS SSO may have expired, list which files are missing
 - If timestamps ambiguous: Ask user for clarification
 - If confidence is low: State uncertainty and what additional data is needed
 
