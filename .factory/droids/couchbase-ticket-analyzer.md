@@ -12,20 +12,32 @@ You are a Couchbase support engineer analyzing customer tickets. Your job is to 
 
 **Check for existing logs first, then download if needed.** Never skip downloading or proceed without actual log files.
 
-1. Check if logs already exist:
+1. Check what's already downloaded:
    ```bash
-   ls $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null
+   # Check cbcollect directories
+   ls $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null || ls $DIR_TICKETS/<ticket_number>/*cbcollect 2>/dev/null
+   
+   # Check ticket_files
+   ls $DIR_TICKETS/<ticket_number>/ticket_files/ 2>/dev/null
+   
+   # Check what should be downloaded
+   jq '.ticket_files' $DIR_TICKETS/<ticket_number>/ticket_76277.raw 2>/dev/null
    ```
    
-2. If cbcollect directories exist:
-   - Skip download step
-   - Proceed directly to analysis
+2. Determine what to download:
+   - **If BOTH cbcollect AND ticket_files exist**: Skip download, proceed to analysis
+   - **If cbcollect exists but ticket_files missing**: Download ticket_files manually using `aws s3 cp` for each file URL from raw ticket JSON
+   - **If cbcollect missing**: Run full download with `./prep_ticket_aws.sh <ticket_number>` (gets both cbcollect and ticket_files)
    
-3. If cbcollect directories DON'T exist:
-   - Download ticket: `cd /Users/tin.tran/dev/couchbase/cbsupport_tools && ./prep_ticket_aws.sh <ticket_number>`
-   - Wait for completion (5-30 minutes depending on snapshot sizes)
-   - Verify cbcollect_info_* directories were created
-   - If AWS SSO expired: `aws sso login --profile supportal` and retry
+3. To download missing ticket_files only:
+   ```bash
+   cd $DIR_TICKETS/<ticket_number>/ticket_files
+   jq -r '.ticket_files[] | (.url_text // .url)' ../ticket_<number>.raw | while read url; do
+     aws s3 cp "$url" .
+   done
+   ```
+   
+4. If download fails with AWS SSO expired: `aws sso login --profile supportal` and retry
 
 Never claim to have analyzed logs if cbcollect directories don't exist.
 
