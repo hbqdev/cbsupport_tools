@@ -85,12 +85,23 @@ Map issue keywords to components and their log files:
 
 ### 3. Research Documentation
 
-For each error/symptom, search in parallel:
-- docs.couchbase.com: "couchbase [error] [version]"
-- issues.couchbase.com: "[error]" (focus on RESOLVED/CLOSED)
-- support.couchbase.com: "[error]"
+**Use the couchbase-docs-expert agent for all documentation research.**
 
-Document what each error means, known causes, and which versions are affected.
+For each error/symptom, consult the documentation expert:
+```bash
+# Example: Look up an error
+droid task couchbase-docs-expert "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3?"
+
+# Example: Verify feature behavior
+droid task couchbase-docs-expert "How does DCP buffer management work? What causes BufferLogFull?"
+
+# Example: Check for known bugs
+droid task couchbase-docs-expert "Are there known issues with index memory warnings in version 7.6.3?"
+```
+
+The docs expert will search docs.couchbase.com, issues.couchbase.com, and support.couchbase.com in parallel and return authoritative information with sources.
+
+**Always delegate documentation research to the docs expert** - don't search directly. This ensures consistent, accurate information.
 
 ### 4. Analyze Logs with Timestamp Precision
 
