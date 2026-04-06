@@ -235,8 +235,11 @@ cbsnap() {
         | grep -v '^\s*$' > snapshot_files \
         || { echo "wget failed fetching snapshot file list" >&2; return 1; }
 
-    local urls
-    mapfile -t urls < snapshot_files
+    # Use readarray if available (bash 4+), otherwise fall back to while-read (macOS bash 3.2)
+    local urls=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && urls+=("$line")
+    done < snapshot_files
     echo "Downloading ${#urls[@]} files for $ticket_name" >&2
     cbd "$ticket_name" "${urls[@]}"
     echo "Snapshot download done: $snapshot_dir" >&2
@@ -321,21 +324,37 @@ prep_ticket() {
     fi
 
     # --- 3. Download zendesk attachments ---
+    # Collect attachment URLs from both top-level zendesk_attachments and comment-level attachments
     local attachment_count=0
     local attachment_array="[]"
     local attachment_dir="$ticket_dir/attachments"
+
+    # Build a combined list of all attachment URLs (top-level + nested in comments)
+    local all_attachment_urls
+    all_attachment_urls=$(jq -r '
+        ((.zendesk_attachments // []) + (.comments // [] | map(.attachments // []) | add // []))
+        | map(select(.mapped_content_url != null) | .mapped_content_url)
+        | .[]
+    ' "$raw_file" 2>/dev/null)
+
     local num_attachments
-    num_attachments=$(jq '.zendesk_attachments | length' "$raw_file" 2>/dev/null || echo 0)
+    num_attachments=$(echo "$all_attachment_urls" | grep -c 'http' 2>/dev/null || echo 0)
 
     if [ "$num_attachments" -gt 0 ] 2>/dev/null; then
         mkdir -p "$attachment_dir"
         echo "=== Downloading $num_attachments zendesk attachment(s) ===" >&2
 
-        attachment_array=$(jq '[.zendesk_attachments[] | {url: .mapped_content_url, created_at: .created_at}]' "$raw_file")
+        attachment_array=$(jq '[
+            ((.zendesk_attachments // []) + (.comments // [] | map(.attachments // []) | add // []))
+            | map(select(.mapped_content_url != null))
+            | .[]
+            | {url: .mapped_content_url}
+        ]' "$raw_file")
 
         while IFS= read -r att_url; do
+            [ -z "$att_url" ] && continue
             local fname
-            fname=$(echo "$att_url" | grep -oP 'name=\K[^&]+' | sed 's/%20/_/g')
+            fname=$(echo "$att_url" | grep -oE 'name=[^&]+' | sed 's/name=//' | sed 's/%20/_/g')
             if [ -z "$fname" ]; then
                 fname="attachment_$(echo "$att_url" | md5sum | cut -c1-8)"
             fi
@@ -346,7 +365,7 @@ prep_ticket() {
             fi
             echo "  Downloading attachment: $fname" >&2
             curl -sL -o "$attachment_dir/$fname" "$att_url" &
-        done < <(jq -r '.zendesk_attachments[].mapped_content_url' "$raw_file")
+        done <<< "$all_attachment_urls"
         wait
         attachment_count=$(find "$attachment_dir" -type f | wc -l)
         echo "=== Downloaded $attachment_count attachment(s) to attachments/ ===" >&2
