@@ -150,6 +150,7 @@ Read `$DIR_TICKETS/<ticket_number>/ticket_timeline.json` and extract:
 - Affected nodes and cluster version
 - Error messages mentioned
 - Environment details
+- **All prior support engineer responses** — extract these verbatim and include them in `analysis_metadata.json` under `"prior_support_responses"` so the manager can compare them against log evidence
 
 **Check for ticket_files** (customer-uploaded SDK/application logs):
 ```bash

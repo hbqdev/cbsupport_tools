@@ -133,7 +133,42 @@ Perform these validation checks on the analysis:
 - ✅ **No contradictions**: Are all findings consistent?
 - ✅ **Gaps acknowledged**: Are missing data/logs noted as limitations?
 
-### 5. Draft Customer Response
+#### E. Prior Response Review
+
+- ⛔ **Prior support responses reviewed**: Were all prior support engineer responses in the ticket timeline read and compared against log evidence?
+- ⛔ **Corrections flagged**: If any prior statement is contradicted by logs, is it explicitly called out with the original statement AND the contradicting log evidence?
+- ⛔ **Customer response corrects errors**: If corrections are needed, does the customer response draft acknowledge and correct them professionally?
+
+### 5. Review Prior Support Responses
+
+**MANDATORY: Before drafting the customer response, review all prior responses already sent by support.**
+
+Read `$DIR_TICKETS/<ticket_number>/ticket_timeline.json` and extract every comment/response posted by a support engineer (not the customer). Look for:
+- Technical explanations or root cause statements already shared
+- Recommendations or workarounds already given
+- Commands or log analysis already shown to the customer
+
+Then compare each prior support statement against your log evidence:
+
+```
+For each prior support statement:
+  - Does your log analysis CONFIRM it? → Mark ✅ Confirmed
+  - Does your log analysis CONTRADICT it? → Mark ⚠️ CORRECTION NEEDED
+  - Is it not addressed by logs? → Mark ❓ Unverified
+```
+
+**If any prior statement is contradicted by the log evidence:**
+1. Document the discrepancy clearly in the report under `### Prior Response Review`
+2. Include the original statement (verbatim from ticket_timeline.json)
+3. Include the contradicting log evidence (verbatim)
+4. Write a correction in the customer response draft that acknowledges and corrects the prior statement professionally
+
+**Example format for corrections in the customer response:**
+> "We'd like to provide an update to our previous analysis. After deeper investigation of the memcached logs, we found that [corrected finding]. Specifically, [verbatim log evidence]. This changes our earlier assessment that [prior statement]."
+
+This ensures the customer always receives the most accurate information even when initial analysis was incomplete.
+
+### 6. Draft Customer Response
 
 Based on the analysis, draft a professional customer response. Use this template:
 
