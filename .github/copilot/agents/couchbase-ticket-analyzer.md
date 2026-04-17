@@ -32,6 +32,75 @@ In `analysis_metadata.json`, every evidence item MUST use this exact format:
 
 Use `rg -N` to capture full lines. Never use `...` or `[truncated]`. If a line is long, include it fully.
 
+## ⛔ RULE #2 — ALWAYS SHOW THE COMMAND USED TO PRODUCE EVERY OUTPUT
+
+Every quantitative result, IP list, count, distribution, or table in your report MUST be preceded by the exact command that produced it. This allows engineers and customers to independently reproduce and verify the result.
+
+- ✅ CORRECT:
+  ```bash
+  rg -iN "Exception occurred during packet execution" memcached.log | grep -oE '"ip":"[^"]+"' | sort | uniq -c | sort -rn
+  ```
+  ```
+  11432  "ip":"192.168.8.49"
+   8231  "ip":"192.168.8.19"
+  ```
+- ❌ WRONG: Listing a table of IPs and counts without the command that generated it.
+- ❌ WRONG: "38 unique pods were observed" without showing `rg ... | grep -oE ... | sort -u | wc -l`
+
+This applies to:
+- IP/host counts and distributions
+- Hourly/per-minute error rate breakdowns
+- Error counts per node
+- Magic byte frequency tables
+- Any `sort | uniq -c` or `wc -l` output
+- tcpdump/tshark analysis output
+
+**Format every command+output block as:**
+```bash
+# Description of what this shows
+<exact command>
+```
+```
+<exact output>
+```
+
+## ⛔ RULE #3 — ANALYZE PCAP FILES WITH TSHARK
+
+If a ticket includes pcap or pcap.gz files (tcpdump captures), you **MUST** analyze them with `tshark`. Do not skip pcap analysis. tshark is available at `/opt/homebrew/bin/tshark`.
+
+**Standard tshark commands for Couchbase KV analysis:**
+
+```bash
+# Decompress first (if .gz)
+gunzip -k file.pcap.gz  # produces file.pcap
+
+# Time range and total packet count
+tshark -r file.pcap -q -z io,stat,0 2>/dev/null | head -20
+
+# Source IP distribution for port 11210 traffic
+tshark -r file.pcap -q -z conv,tcp 2>/dev/null | grep ":11210" | awk '{print $1}' | grep -oE '^[0-9.]+' | sort | uniq -c | sort -rn | head -30
+
+# All unique source IPs connecting to port 11210
+tshark -r file.pcap -Y "tcp.dstport == 11210" -T fields -e ip.src 2>/dev/null | sort | uniq -c | sort -rn | head -30
+
+# Sample packet details for a specific source IP
+tshark -r file.pcap -Y "ip.src == 192.168.8.49 and tcp.dstport == 11210" -T fields -e frame.time -e ip.src -e ip.dst -e tcp.srcport -e tcp.flags.str -e tcp.len 2>/dev/null | head -20
+
+# Check for HTTP traffic on port 11210 (health probe pattern)
+tshark -r file.pcap -Y "tcp.dstport == 11210 and http" 2>/dev/null | head -20
+
+# TCP connection rate (SYN packets) per source to port 11210
+tshark -r file.pcap -Y "tcp.dstport == 11210 and tcp.flags.syn == 1 and tcp.flags.ack == 0" -T fields -e ip.src 2>/dev/null | sort | uniq -c | sort -rn | head -20
+
+# Payload content inspection for invalid traffic (first bytes)
+tshark -r file.pcap -Y "tcp.dstport == 11210" -T fields -e ip.src -e data 2>/dev/null | grep -v "^$" | head -20
+
+# Protocol distribution for port 11210 connections
+tshark -r file.pcap -q -z io,phs 2>/dev/null | head -40
+```
+
+**Always include tshark commands AND their output in the report.** If tshark analysis takes too long on a large pcap, use `-c 100000` to limit packets analyzed.
+
 ## Critical Requirements
 
 **Check for existing logs first, then download if needed.** Never skip downloading or proceed without actual log files.

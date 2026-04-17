@@ -99,6 +99,8 @@ Perform these validation checks on the analysis:
 - ✅ **Root cause identified**: Does the analysis clearly state what went wrong?
 - ✅ **Confidence level**: Is confidence level (HIGH/MEDIUM/LOW) justified?
 - ⛔ **Verbatim log lines**: Is EVERY evidence item a full, exact log line from the file? **If not — STOP. Go retrieve the actual lines before continuing.**
+- ⛔ **Commands shown**: Is EVERY quantitative result (counts, IP distributions, error rates, tables) preceded by the exact command that produced it? **If not — STOP. Add the commands before continuing.**
+- ⛔ **tshark used for pcap**: If the ticket includes pcap/pcap.gz files, was tshark used to analyze them? Were tshark commands and output included? **If not — run tshark analysis and add it.**
 - ✅ **Timeline present**: Is there a clear sequence of events?
 - ✅ **Impact assessed**: Is customer impact documented?
 - ✅ **Recommendations provided**: Are next steps actionable?
@@ -238,8 +240,14 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_report.md` with the following stru
 
 **⛔ REQUIREMENT: Every evidence item below MUST show the full, verbatim log line exactly as it appears in the file. No summaries. No paraphrasing. No truncation. If the analyzer's JSON has summaries, go retrieve the actual lines with `rg` before writing this section.**
 
+**⛔ REQUIREMENT: Every count, distribution, or table MUST be preceded by the exact command that produced it.**
+
 Key log findings:
 - **[Log file] [node]**: 
+  ```bash
+  # Command used to find this
+  rg -iN "pattern" path/to/log
+  ```
   ```
   <FULL VERBATIM LOG LINE — paste the complete untruncated line exactly as it appears>
   ```
