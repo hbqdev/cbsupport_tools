@@ -34,7 +34,7 @@ Use `rg -N` to capture full lines. Never use `...` or `[truncated]`. If a line i
 
 ## ⛔ RULE #2 — ALWAYS SHOW THE COMMAND USED TO PRODUCE EVERY OUTPUT
 
-Every quantitative result, IP list, count, distribution, or table in your report MUST be preceded by the exact command that produced it. This allows engineers and customers to independently reproduce and verify the result.
+Every quantitative result, IP list, count, distribution, rate, or table in your report MUST be preceded by the exact command that produced it. This allows engineers and customers to independently reproduce and verify the result.
 
 - ✅ CORRECT:
   ```bash
@@ -46,11 +46,13 @@ Every quantitative result, IP list, count, distribution, or table in your report
   ```
 - ❌ WRONG: Listing a table of IPs and counts without the command that generated it.
 - ❌ WRONG: "38 unique pods were observed" without showing `rg ... | grep -oE ... | sort -u | wc -l`
+- ❌ WRONG: "6,942 mut/s" without showing the two log lines and the arithmetic that produced that number.
 
 This applies to:
 - IP/host counts and distributions
 - Hourly/per-minute error rate breakdowns
 - Error counts per node
+- **Mutation/operation rates** (mut/s, ops/s) — always show consecutive log lines + delta math
 - Magic byte frequency tables
 - Any `sort | uniq -c` or `wc -l` output
 - tcpdump/tshark analysis output
@@ -62,6 +64,15 @@ This applies to:
 ```
 ```
 <exact output>
+```
+
+**For derived rates (e.g., mut/s from StatsMgr logs), always show the arithmetic:**
+```
+# Line A:
+2026-04-23T03:40:11.616Z ... total_docs=2668921153 ...
+# Line B (1 second later):
+2026-04-23T03:40:12.616Z ... total_docs=2668928095 ...
+# Calculation: (2668928095 - 2668921153) ÷ 1.000s = 6,942 mut/s
 ```
 
 ## ⛔ RULE #3 — ANALYZE PCAP FILES WITH TSHARK
@@ -189,7 +200,7 @@ Map issue keywords to components and their log files:
 
 **CRITICAL RULE: Never make claims about "expected behavior" or "normal behavior" without documented evidence.**
 
-For each error/symptom AND for any behavioral questions, consult the documentation expert using the task tool with agent_type "custom" and name "couchbase-docs-expert":
+For each error/symptom AND for any behavioral questions, consult the documentation expert using the task tool with agent_type "general-purpose" and name "couchbase-docs-expert":
 
 Example queries:
 - "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3?"
@@ -206,6 +217,27 @@ The docs expert will search docs.couchbase.com, issues.couchbase.com, and suppor
 - State "No official documentation found for this behavior"
 - Mark as "Unknown - requires investigation"
 - Do NOT claim something is "expected" or "normal" without sources
+
+### Source Code Research (couchbase-source-expert)
+
+When documentation is absent or a log message/behavior needs to be confirmed at the code level, invoke **couchbase-source-expert** using the task tool with agent_type "general-purpose" and name "couchbase-source-expert".
+
+**Use couchbase-source-expert when:**
+- A log message origin or trigger condition is unclear (e.g. "where does this timer fire from?")
+- A default value, interval, or threshold needs to be confirmed from code
+- Behavior changed between CBS versions and the exact commit matters
+- An error code or retry reason needs tracing to its definition
+- The docs expert returns no documentation for a behavior
+
+Example queries:
+- "Find the cb_creds_rotation timer interval and what triggers a password rotation in couchbase/ns_server"
+- "Find where ENDPOINT_NOT_AVAILABLE is defined and what sets it in couchbase/couchbase-jvm-clients"
+- "Find the default checkpoint_interval value in couchbase/goxdcr"
+- "Find what changed in the indexer memory handling between CBS 7.6.5 and 7.6.10 in couchbase/indexing"
+
+The source expert will search GitHub (github.com/couchbase, github.com/couchbaselabs), read source files, and return verbatim code with file paths and line numbers.
+
+**Invoke docs expert and source expert in parallel** when both documentation and code-level confirmation are needed.
 
 ### 4. Analyze Logs with Timestamp Precision
 
@@ -284,13 +316,14 @@ rg -iN "connection.*refused|connection.*reset|unable to connect" ticket_files/*
 
 ### 5. Generate Report
 
-**IMPORTANT: Create ONLY analysis_metadata.json. The markdown report will be created by the ticket-agents-manager.**
+**IMPORTANT: Create ONLY analysis_metadata.json. The combined markdown report (analysis_report.md with customer response at the end) will be created by the ticket-agents-manager.**
 
 Your job ends with the JSON file. The manager will:
 - Read your JSON
 - Validate your findings
 - Check for unsupported claims
-- Generate the final analysis_report.md
+- Generate the final `analysis_report.md` (single file — internal analysis + customer response at the end)
+- **No separate `customer_response.md` is created**
 
 Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
 
@@ -379,10 +412,11 @@ Analysis complete for ticket [NUMBER]
 - Logs analyzed: [List of log files searched]
 - Confidence: [HIGH/MEDIUM/LOW]
 
-The ticket-agents-manager will now validate findings and generate the final report.
+The ticket-agents-manager will now validate findings and generate the final
+combined report (analysis_report.md with customer response at the end).
 ```
 
-**DO NOT create analysis_report.md** - that's the manager's job after validation.
+**DO NOT create analysis_report.md or customer_response.md** - that's the manager's job after validation.
 
 ## Quality Standards
 

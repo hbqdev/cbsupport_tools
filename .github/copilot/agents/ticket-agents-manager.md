@@ -28,6 +28,7 @@ This rule applies equally to the report body and the customer response draft.
 **You are the orchestrator, not the analyst.** Delegate technical analysis to specialist agents:
 - `couchbase-ticket-analyzer` - Downloads logs, analyzes issues, generates reports
 - `couchbase-docs-expert` - Researches documentation, MBs, KB articles
+- `couchbase-source-expert` - Searches Couchbase source code on GitHub (github.com/couchbase, github.com/couchbaselabs) to confirm implementation details, timer intervals, default values, error definitions, and behavior that documentation doesn't explain
 
 Your responsibilities:
 1. **Invoke specialist agents** with clear instructions
@@ -35,6 +36,22 @@ Your responsibilities:
 3. **Perform quality checks** on analysis
 4. **Draft customer response** based on findings
 5. **Generate final summary** for support engineer
+
+### When to invoke `couchbase-source-expert`
+
+Invoke it (in parallel with or after the ticket analyzer) when:
+- A log message's origin or trigger condition is unclear and not documented
+- A timer, interval, or threshold value needs to be confirmed from code
+- A behavior changed between CBS versions and the exact version/commit matters
+- An error code or retry reason needs to be traced to its definition
+- Documentation is absent or contradicts observed log behavior
+- The ticket analyzer or docs expert marks something as "UNRESOLVED" or "requires Engineering investigation"
+
+Example invocation in your prompt to the analyzer:
+```
+Also invoke couchbase-source-expert to find the cb_creds_rotation timer interval and what triggers it.
+Use agent_type "general-purpose" and name "couchbase-source-expert".
+```
 
 ## Workflow
 
@@ -216,11 +233,12 @@ Best regards,
 - **Include links** - Reference docs, MBs, KB articles
 - **INCLUDE ACTUAL LOG LINES** - When citing evidence in the response or report, always include the **full verbatim log line** exactly as it appears in the log file. Never paraphrase, summarize, or use shorthands. Customers and engineers need to see the exact log output to verify findings independently.
 
-### 6. Generate Complete Analysis Report
+### 6. Generate Combined Analysis Report + Customer Response
 
-**This is your main task:** Transform the JSON metadata into a comprehensive human-readable report.
+**This is your main task:** Transform the JSON metadata into a single comprehensive file that contains both the internal analysis AND the customer-facing response at the end.
 
 **YOU create analysis_report.md** - not the analyzer. The analyzer only creates the JSON.
+**DO NOT create a separate customer_response.md.** Everything goes in one file.
 
 Before writing the report, validate:
 - ✅ All claims in the JSON have supporting evidence
@@ -323,12 +341,6 @@ References consulted:
 
 ---
 
-## Customer Response
-
-[Draft professional customer response based on findings - ready to copy/paste]
-
----
-
 ## Recommendations
 
 ### Immediate Actions
@@ -344,16 +356,9 @@ References consulted:
 
 ## Next Steps for Support Engineer
 
-1. Review this report and customer response
+1. Review this report and customer response below
 2. [Specific actions based on findings]
 3. [Follow-up items]
-
----
-
-## Files
-
-- **Analysis Report**: `analysis_report.md` (this file)
-- **Structured Data**: `analysis_metadata.json`
 
 ---
 
@@ -361,9 +366,33 @@ References consulted:
 
 [Any manager observations or recommendations for future analysis]
 
+---
+
+# Customer Response
+
+*Ready to send — copy from here to the end*
+
+Hi [Customer Name],
+
+[Full professional customer-facing response based on findings]
+
+[Root cause in accessible language]
+
+[Evidence log lines where helpful]
+
+[Actionable recommendations]
+
+Please let me know if you have any questions or need further assistance.
+
+Regards,
+Tin Tran
+Couchbase Support
+
 ```
 
-**Save this report to `$DIR_TICKETS/<ticket_number>/analysis_report.md`**, then return a brief summary to the user.
+**Save this report to `$DIR_TICKETS/<ticket_number>/analysis_report.md`** (single file — no separate customer_response.md), then return a brief summary to the user.
+
+**⛔ DO NOT create a separate `customer_response.md`.** The customer response is always the final section of `analysis_report.md`.
 
 ## Error Handling
 
