@@ -194,6 +194,8 @@ Map issue keywords to components and their log files:
 | FTS, full-text | FTS | fts.log |
 | Analytics, cbas | Analytics | analytics_*.log |
 
+**⚠️ Do not chase XDCR/goxdcr log lines unless the ticket is about XDCR replication.** XDCR internally polls `GET /pools/default` for topology refresh — its `User-Agent: couchbase-goxdcr/<version>` entries will appear in `http_access.log` alongside all other callers. These are normal background requests and are not relevant unless the ticket is specifically about XDCR behavior.
+
 ### 3. Research Documentation
 
 **MANDATORY: Use the couchbase-docs-expert agent for ALL documentation research.**
