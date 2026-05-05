@@ -541,13 +541,13 @@ prep_ticket() {
         --arg subject "$subject" \
         --argjson couchbase_versions "$cb_versions" \
         --argjson snapshot_urls "$snapshot_array" \
-        --arg snapshot_count "$snapshot_count" \
+        --arg snapshot_count "${snapshot_count:-0}" \
         --arg environment_type "$env_type" \
         --arg first_message "$first_msg" \
         --arg last_message "$last_msg" \
-        --arg attachment_count "$attachment_count" \
+        --arg attachment_count "${attachment_count:-0}" \
         --argjson attachments "$attachment_array" \
-        --arg ticket_file_count "$ticket_file_count" \
+        --arg ticket_file_count "${ticket_file_count:-0}" \
         --argjson ticket_files "$ticket_files_array" \
         '{
             ticket_number: $ticket_number,
