@@ -359,9 +359,8 @@ prep_ticket() {
                 fname="attachment_$(echo "$att_url" | md5sum | cut -c1-8)"
             fi
             if [ -f "$attachment_dir/$fname" ]; then
-                local ts
-                ts=$(date +%s%N | cut -c1-13)
-                fname="${ts}_${fname}"
+                echo "  Skipping (already exists): $fname" >&2
+                continue
             fi
             echo "  Downloading attachment: $fname" >&2
             curl -sL -o "$attachment_dir/$fname" "$att_url" &
@@ -389,7 +388,12 @@ prep_ticket() {
         (
             cd "$tfiles_dir" || exit 1
             while IFS= read -r s3url; do
-                echo "  Downloading ticket file: $(basename "$s3url")" >&2
+                fname=$(basename "$s3url")
+                if [ -f "$fname" ]; then
+                    echo "  Skipping (already exists): $fname" >&2
+                    continue
+                fi
+                echo "  Downloading ticket file: $fname" >&2
                 aws s3 cp "$s3url" . &
             done < <(jq -r '.ticket_files[] | (.url_text // .url)' "$raw_file")
             wait
