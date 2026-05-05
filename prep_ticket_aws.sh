@@ -259,17 +259,22 @@ cbsnap() {
     local failed=0
     (
         cd "$snap_dir" || exit 1
+        local pids=()
         while IFS= read -r s3url; do
             [ -z "$s3url" ] && continue
-            local fname
             fname=$(basename "$s3url")
             if [ -f "$fname" ]; then
                 echo "  Skipping (already exists): $fname" >&2
                 continue
             fi
             aws s3 cp "$s3url" . &
+            pids+=($!)
         done <<< "$file_list"
-        wait
+        local exit_code=0
+        for pid in "${pids[@]}"; do
+            wait "$pid" || exit_code=1
+        done
+        exit "$exit_code"
     ) || failed=1
 
     if [ "$failed" -eq 1 ]; then
