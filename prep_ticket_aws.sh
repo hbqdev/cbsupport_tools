@@ -213,36 +213,76 @@ cbd() {
 }
 
 # cbsnap <ticket_name> <snapshot_url>
-# Download a Capella/supportal snapshot's log files.
+# Download a Capella/supportal snapshot's log files into a dated, ID-keyed subfolder.
+# Skips if the snapshot URL was already successfully downloaded.
 cbsnap() {
     if [ "$#" -ne 2 ]; then
         echo "Usage: cbsnap <TICKET_NAME> <SNAPSHOT_URL>" >&2
         return 1
     fi
     local ticket_name="$1"
-    local snapshot_url="$2/log-files"
+    local base_url="$2"
     local timeout=10
-    local snapshot_dir="$DIR_TICKETS/$ticket_name"
+    local ticket_dir="$DIR_TICKETS/$ticket_name"
+    local tracking_file="$ticket_dir/snapshot"
 
-    mkdir -p "$snapshot_dir"
-    cd "$snapshot_dir" || return 1
+    mkdir -p "$ticket_dir"
 
-    echo "Fetching file list from: $snapshot_url" >&2
-    echo "$2" >> snapshot
+    # Skip if already downloaded
+    if [ -f "$tracking_file" ] && grep -qxF "$base_url" "$tracking_file"; then
+        echo "  Skipping snapshot (already downloaded): $base_url" >&2
+        return 0
+    fi
 
-    wget --timeout="$timeout" --tries=1 -qO - "$snapshot_url" \
+    echo "Fetching file list from: ${base_url}/log-files" >&2
+    local file_list
+    file_list=$(wget --timeout="$timeout" --tries=1 -qO - "${base_url}/log-files" \
         | jq -r '.. | .url_text? // empty' \
-        | grep -v '^\s*$' > snapshot_files \
-        || { echo "wget failed fetching snapshot file list" >&2; return 1; }
+        | grep -v '^\s*$') \
+        || { echo "wget failed fetching snapshot file list for $base_url" >&2; return 1; }
 
-    # Use readarray if available (bash 4+), otherwise fall back to while-read (macOS bash 3.2)
-    local urls=()
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && urls+=("$line")
-    done < snapshot_files
-    echo "Downloading ${#urls[@]} files for $ticket_name" >&2
-    cbd "$ticket_name" "${urls[@]}"
-    echo "Snapshot download done: $snapshot_dir" >&2
+    if [ -z "$file_list" ]; then
+        echo "  No files found for snapshot: $base_url" >&2
+        return 0
+    fi
+
+    # Derive a stable folder name: YYYY-MM-DD_<snapshot-id>
+    local snap_date snap_id snap_dir
+    snap_date=$(echo "$file_list" | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+    [ -z "$snap_date" ] && snap_date=$(date +%Y-%m-%d)
+    snap_id=$(echo "$base_url" | grep -oE '[a-f0-9]{8,}' | head -1 | cut -c1-8)
+    snap_dir="$ticket_dir/snapshots/${snap_date}_${snap_id}"
+
+    mkdir -p "$snap_dir"
+    echo "  Downloading snapshot to: snapshots/${snap_date}_${snap_id}/" >&2
+
+    local failed=0
+    (
+        cd "$snap_dir" || exit 1
+        while IFS= read -r s3url; do
+            [ -z "$s3url" ] && continue
+            local fname
+            fname=$(basename "$s3url")
+            if [ -f "$fname" ]; then
+                echo "  Skipping (already exists): $fname" >&2
+                continue
+            fi
+            aws s3 cp "$s3url" . &
+        done <<< "$file_list"
+        wait
+    ) || failed=1
+
+    if [ "$failed" -eq 1 ]; then
+        echo "  ERROR: snapshot download failed for $base_url" >&2
+        return 1
+    fi
+
+    # Extract archives in the dated subfolder
+    (cd "$snap_dir" && _extract_archives)
+
+    # Record URL only after successful download
+    echo "$base_url" >> "$tracking_file"
+    echo "  Snapshot download done: snapshots/${snap_date}_${snap_id}/" >&2
 }
 
 # get_ticket <ticket_number>
