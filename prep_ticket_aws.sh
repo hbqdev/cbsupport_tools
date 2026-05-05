@@ -328,7 +328,7 @@ prep_ticket() {
     echo "=== Fetching ticket $ticket_number ===" >&2
     get_ticket "$ticket_number"
 
-    local raw_file="ticket_${ticket_number}.raw"
+    local raw_file="$ticket_dir/ticket_${ticket_number}.raw"
     if [ ! -f "$raw_file" ]; then
         echo "ERROR: Failed to fetch ticket data" >&2
         return 1
