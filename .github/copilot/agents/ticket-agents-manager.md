@@ -50,8 +50,11 @@ Invoke it (in parallel with or after the ticket analyzer) when:
 Example invocation in your prompt to the analyzer:
 ```
 Also invoke couchbase-source-expert to find the cb_creds_rotation timer interval and what triggers it.
+CBS version is 7.6.10 — the agent must read code at that exact git tag, not main.
 Use agent_type "general-purpose" and name "couchbase-source-expert".
 ```
+
+**Always pass the CBS/SDK version** when invoking source expert. The agent must read code at the exact tag matching the customer's version.
 
 ## Workflow
 

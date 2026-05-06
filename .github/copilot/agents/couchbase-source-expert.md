@@ -103,29 +103,53 @@ for t in tags:
 1. **Parse the request** — extract:
    - Component name (maps to repo)
    - The specific symbol/message/behavior to find
-   - CBS/SDK version if relevant
+   - CBS/SDK version (**required** — always ask the caller to provide it; never default to `main`)
 
-2. **Search GitHub first** (Tier 1):
+2. **Resolve the exact git tag** before reading any code:
+   ```bash
+   # Find the matching tag for the customer's CBS version (e.g. 7.6.10)
+   gh api repos/couchbase/ns_server/git/refs/tags | python3 -c "
+   import sys, json
+   tags = json.load(sys.stdin)
+   for t in tags:
+       ref = t['ref'].replace('refs/tags/','')
+       if '7.6.10' in ref:
+           print(ref)
+   "
+   ```
+   Use the **exact version tag** (e.g. `7.6.10`) for all subsequent file reads and sparse clones. If no exact tag exists, use the closest patch release and note the discrepancy.
+
+3. **Search GitHub first** (Tier 1) — scope search to the resolved tag when possible:
    ```bash
    gh search code "<exact_log_message_or_function>" --repo couchbase/<repo> --limit 20
    ```
    Show the full output of every command.
 
-3. **Read the file** once you find the location:
-   - For short files: use `gh api` to fetch content
-   - For large files: sparse-clone and read with `rg`/`view`
+4. **Read the file at the correct tag** once you find the location:
+   - For short files: use `gh api` with `?ref=<tag>` to fetch content at the exact version
+     ```bash
+     gh api "repos/couchbase/ns_server/contents/path/to/file.erl?ref=7.6.10" \
+       | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content']).decode())"
+     ```
+   - For large files: sparse-clone at the specific tag
+     ```bash
+     git clone --depth 1 --filter=blob:none --sparse \
+       --branch 7.6.10 \
+       git@github.com:couchbase/<repo>.git \
+       ~/couchbase-src/<repo>-7.6.10
+     ```
 
-4. **Trace the code** — follow the call chain:
+5. **Trace the code** — follow the call chain:
    - Find where the log message is emitted
    - Find what triggers the function
    - Find configuration defaults / timer intervals
    - Find error code definitions
 
-5. **Check version differences** if version is provided:
+6. **Check version differences** if the caller asks or if the behavior is version-sensitive:
    - Check if the code differs between tags
    - Note when behavior changed (git log / git blame)
 
-6. **Format the response** — see Output Format below.
+7. **Format the response** — see Output Format below.
 
 ## Common Search Patterns
 

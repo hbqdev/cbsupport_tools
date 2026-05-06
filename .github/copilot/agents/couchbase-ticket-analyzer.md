@@ -229,10 +229,12 @@ When documentation is absent or a log message/behavior needs to be confirmed at 
 - An error code or retry reason needs tracing to its definition
 - The docs expert returns no documentation for a behavior
 
+**Always include the CBS/SDK version in your prompt to source expert** — it must read code at the exact git tag matching the customer's version, not `main`.
+
 Example queries:
-- "Find the cb_creds_rotation timer interval and what triggers a password rotation in couchbase/ns_server"
-- "Find where ENDPOINT_NOT_AVAILABLE is defined and what sets it in couchbase/couchbase-jvm-clients"
-- "Find the default checkpoint_interval value in couchbase/goxdcr"
+- "Find the cb_creds_rotation timer interval and what triggers a password rotation in couchbase/ns_server. CBS version: 7.6.10"
+- "Find where ENDPOINT_NOT_AVAILABLE is defined and what sets it in couchbase/couchbase-jvm-clients. SDK version: 3.6.2"
+- "Find the default checkpoint_interval value in couchbase/goxdcr. CBS version: 7.2.6"
 - "Find what changed in the indexer memory handling between CBS 7.6.5 and 7.6.10 in couchbase/indexing"
 
 The source expert will search GitHub (github.com/couchbase, github.com/couchbaselabs), read source files, and return verbatim code with file paths and line numbers.
