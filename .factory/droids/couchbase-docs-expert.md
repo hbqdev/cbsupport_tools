@@ -34,17 +34,56 @@ Search strategy:
 ```
 
 ### 2. Bug Tracker (MB)
-**issues.couchbase.com** - Known issues and fixes
-- Search for error messages
-- Find version-specific bugs
-- Check fix versions
-- Focus on RESOLVED/CLOSED issues first
+**Jira REST API** (preferred) — direct, structured access to issues.couchbase.com
 
-Search strategy:
+Credentials are stored in `~/.couchbase-support/jira.env`. Always load them before making Jira API calls:
+
+```bash
+source ~/.couchbase-support/jira.env
+# Now $JIRA_INSTANCE_URL, $JIRA_USER_EMAIL, $JIRA_API_KEY are set
 ```
-"<error_message>" site:issues.couchbase.com
-"MB-<number>" site:issues.couchbase.com
+
+**Fetch a specific MB by number:**
+```bash
+source ~/.couchbase-support/jira.env
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  "$JIRA_INSTANCE_URL/rest/api/2/issue/MB-12345" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+f = d['fields']
+print('Summary:', f['summary'])
+print('Status:', f['status']['name'])
+print('Fix versions:', [v['name'] for v in f.get('fixVersions',[])])
+print('Affected versions:', [v['name'] for v in f.get('versions',[])])
+print('Description:', (f.get('description') or '')[:500])
+"
 ```
+
+**Search MBs by keyword or error message:**
+```bash
+source ~/.couchbase-support/jira.env
+JQL="project=MB AND text~\"cb_creds_rotation\" ORDER BY updated DESC"
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  -G "$JIRA_INSTANCE_URL/rest/api/2/search" \
+  --data-urlencode "jql=$JQL" \
+  --data-urlencode "maxResults=10" \
+  --data-urlencode "fields=summary,status,fixVersions,versions,description" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for i in d.get('issues', []):
+    f = i['fields']
+    print(i['key'], '-', f['summary'])
+    print('  Status:', f['status']['name'])
+    print('  Fix versions:', [v['name'] for v in f.get('fixVersions',[])])
+    print('  Affected:', [v['name'] for v in f.get('versions',[])])
+    print()
+"
+```
+
+Always prefer Jira REST API over web search for MB lookups — it is more reliable and structured.
 
 ### 3. Knowledge Base
 **support.couchbase.com** - Support articles and solutions

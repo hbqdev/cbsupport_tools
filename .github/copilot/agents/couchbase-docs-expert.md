@@ -34,17 +34,75 @@ Search strategy:
 ```
 
 ### 2. Bug Tracker (MB)
-**issues.couchbase.com** - Known issues and fixes
-- Search for error messages
-- Find version-specific bugs
-- Check fix versions
-- Focus on RESOLVED/CLOSED issues first
+**Jira REST API** (preferred) — direct, structured access to issues.couchbase.com
 
-Search strategy:
+Credentials are stored in `~/.couchbase-support/jira.env`. Always load them before making Jira API calls:
+
+```bash
+source ~/.couchbase-support/jira.env
+# Now $JIRA_INSTANCE_URL, $JIRA_USER_EMAIL, $JIRA_API_KEY are set
 ```
-"<error_message>" site:issues.couchbase.com
-"MB-<number>" site:issues.couchbase.com
+
+**Fetch a specific MB by number:**
+```bash
+source ~/.couchbase-support/jira.env
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  "$JIRA_INSTANCE_URL/rest/api/2/issue/MB-12345" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+f = d['fields']
+print('Summary:', f['summary'])
+print('Status:', f['status']['name'])
+print('Fix versions:', [v['name'] for v in f.get('fixVersions',[])])
+print('Affected versions:', [v['name'] for v in f.get('versions',[])])
+print('Description:', (f.get('description') or '')[:500])
+"
 ```
+
+**Search MBs by keyword or error message:**
+```bash
+source ~/.couchbase-support/jira.env
+JQL="project=MB AND text~\"cb_creds_rotation\" ORDER BY updated DESC"
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  -G "$JIRA_INSTANCE_URL/rest/api/2/search" \
+  --data-urlencode "jql=$JQL" \
+  --data-urlencode "maxResults=10" \
+  --data-urlencode "fields=summary,status,fixVersions,versions,description" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for i in d.get('issues', []):
+    f = i['fields']
+    print(i['key'], '-', f['summary'])
+    print('  Status:', f['status']['name'])
+    print('  Fix versions:', [v['name'] for v in f.get('fixVersions',[])])
+    print('  Affected:', [v['name'] for v in f.get('versions',[])])
+    print()
+"
+```
+
+**Search for MBs affecting a specific CBS version:**
+```bash
+source ~/.couchbase-support/jira.env
+JQL="project=MB AND affectedVersion=\"7.6.2\" AND text~\"pools/default\" ORDER BY updated DESC"
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  -G "$JIRA_INSTANCE_URL/rest/api/2/search" \
+  --data-urlencode "jql=$JQL" \
+  --data-urlencode "maxResults=10" \
+  --data-urlencode "fields=summary,status,fixVersions,versions" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for i in d.get('issues', []):
+    f = i['fields']
+    print(i['key'], '-', f['summary'], '| Fix:', [v['name'] for v in f.get('fixVersions',[])])
+"
+```
+
+Always prefer Jira REST API over `web_fetch` for MB lookups — it is more reliable and structured. Fall back to `web_fetch(url="https://issues.couchbase.com/browse/MB-XXXXX")` only if the API call fails.
 
 ### 3. Knowledge Base
 **support.couchbase.com** - Support articles and solutions
@@ -262,16 +320,24 @@ Default: 256 MB minimum, recommended 4GB+ for production
 
 ## Search Tools
 
-Use the `web_fetch` tool to search and retrieve documentation:
+Use the `web_fetch` tool for docs/KB searches, and `bash` tool for Jira REST API calls:
 
-```python
-# Example: Search for OOM error
+```bash
+# Search docs
 web_fetch(url="https://www.google.com/search?q=couchbase+OOM+resident_ratio+site:docs.couchbase.com")
 
-# Example: Check specific MB
-web_fetch(url="https://issues.couchbase.com/browse/MB-12345")
+# Look up a specific MB via Jira API (preferred)
+source ~/.couchbase-support/jira.env
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" -H "Accept: application/json" \
+  "$JIRA_INSTANCE_URL/rest/api/2/issue/MB-12345" | python3 -c "
+import sys, json; d=json.load(sys.stdin); f=d['fields']
+print(d['key'], '-', f['summary'])
+print('Status:', f['status']['name'], '| Fix:', [v['name'] for v in f.get('fixVersions',[])])
+print('Affected:', [v['name'] for v in f.get('versions',[])])
+print('Description:', (f.get('description') or '')[:600])
+"
 
-# Example: KB article
+# KB article
 web_fetch(url="https://support.couchbase.com/hc/en-us/search?query=memory+quota")
 ```
 
