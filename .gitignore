@@ -193,3 +193,4 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .zip
+# GitHub Copilot agents are tracked
