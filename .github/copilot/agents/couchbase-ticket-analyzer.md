@@ -283,13 +283,34 @@ rg -iN "build.*fail|build.*error|panic|fatal" cbcollect_*/indexer.log
 ```
 
 **Cluster issues (ns_server logs):**
+
+**MANDATORY for any cluster/failover/node-down issue: always search BOTH `ns_server.info.log` AND `ns_server.debug.log`.** The debug log contains critical process-level signals (NACK messages, gen_server overload, process exits, mailbox pressure) that do NOT appear in the info log and are essential for root cause analysis.
+
 ```bash
-# Failover detection
-rg -iN "failover|auto_failover|node.*down|rebalance.*fail" cbcollect_*/ns_server.*.log
+# Failover detection (info + debug)
+rg -iN "failover|auto_failover|node.*down|rebalance.*fail" cbcollect_*/ns_server.info.log cbcollect_*/ns_server.debug.log
+
+# Process overload / async NACK (debug log only - critical for stall diagnosis)
+rg -N "Received nack\|register_with_async\|message_queue_len\|overloaded\|noproc\|noconnection" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
+
+# Process exits / supervisor restarts (debug log)
+rg -N "EXIT\|process_died\|child.*terminated\|supervisor.*restarting" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
+
+# ns_config writes during issue window (debug log)
+rg -N "ns_config\|config_update\|set_kvlist" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
+
+# gen_server call timeouts / rejections (debug log)
+rg -N "gen_server.*timeout\|call.*timeout\|handle_call.*timeout" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
 
 # Disk/memory issues
-rg -iN "disk.*full|disk_usage|memory.*high|disk.*watermark" cbcollect_*/ns_server.*.log
+rg -iN "disk.*full|disk_usage|memory.*high|disk.*watermark" cbcollect_*/ns_server.info.log cbcollect_*/ns_server.debug.log
 ```
+
+**Key debug-only signals to always check for cluster/stall issues:**
+- `async:register_with_async: Received nack` — process mailbox full or process overloaded/not responding
+- `message_queue_len` spikes — process falling behind on message processing
+- Supervisor restart chains — cascading process failures
+- `ns_config` write bursts — config thrashing can block the config server process
 
 For multi-node clusters:
 - Search each node's logs separately

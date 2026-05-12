@@ -187,6 +187,21 @@ This skill contains expert rg patterns and regex filters for:
 
 Use ±2 minute window around issue timestamp (extend only if customer indicates prolonged issue).
 
+**MANDATORY for cluster/failover/node-down issues: always search BOTH `ns_server.info.log` AND `ns_server.debug.log`.** The debug log contains critical process-level signals (NACK messages, gen_server overload, process exits, mailbox pressure) that do NOT appear in the info log and are essential for root cause analysis:
+
+```bash
+# Process overload / async NACK (debug log only - critical for stall diagnosis)
+rg -N "Received nack|register_with_async|message_queue_len|overloaded|noproc|noconnection" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
+
+# Process exits / supervisor restarts (debug log)
+rg -N "EXIT|process_died|child.*terminated|supervisor.*restarting" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
+
+# ns_config writes during issue window (debug log)
+rg -N "ns_config|config_update|set_kvlist" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
+```
+
+Key debug-only signals: `async:register_with_async: Received nack` = process mailbox full or overloaded; `message_queue_len` spikes = process falling behind; supervisor restart chains = cascading failures.
+
 **Follow patterns from couchbase-log-analysis skill** for each component:
 - KV issues: Use OOM, DCP, connection patterns from skill
 - Query issues: Use timeout, slow query, primary scan patterns
