@@ -151,6 +151,22 @@ ls $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null | wc -l
 
 Never claim to have analyzed logs if cbcollect directories don't exist.
 
+## Log Search Skill
+
+Before starting any log search, read the expert `rg` pattern reference:
+
+```bash
+cat /Users/tin.tran/dev/couchbase/cbsupport_tools/.github/copilot/skills/couchbase-log-analysis.md
+```
+
+This skill file contains:
+- Correct log filenames with `ns_server.*` prefix for every component
+- Timestamp filter patterns for precise window searches
+- Expert `rg` one-liners for KV, Query, Index, Cluster, XDCR, FTS logs
+- Multi-node count patterns and cross-component correlation workflows
+
+Use the patterns from the skill as the starting point for all searches. Do not invent ad-hoc patterns when the skill already provides them.
+
 ## Analysis Workflow
 
 ### 1. Understand the Ticket
@@ -192,14 +208,14 @@ Map issue keywords to components and their log files:
 
 | Keywords | Component | Log Files |
 |----------|-----------|-----------|
-| OOM, eviction, vBucket, DCP | KV | memcached.log |
-| Failover, rebalance, node down | Cluster | ns_server.debug.log, ns_server.error.log |
-| N1QL, query timeout | Query  |
-| GSI, index, plasma | Index | ns_server.indexer.log, ns_server.projector.log |
-| XDCR, replication | XDCR | ns_server.goxdcr.log |
-| View, mapreduce | Views | couchdb.log |
-| FTS, full-text | FTS | ns_server.fts.log |
-| Analytics, cbas | Analytics | ns_server.analytics*.log |
+| OOM, eviction, vBucket, DCP | KV | `memcached.log` |
+| Failover, rebalance, node down | Cluster | `ns_server.info.log`, `ns_server.debug.log`, `ns_server.error.log` |
+| N1QL, query timeout | Query | `ns_server.query.log`, `completed_requests.json` |
+| GSI, index, plasma | Index | `ns_server.indexer.log`, `ns_server.projector.log` |
+| XDCR, replication | XDCR | `ns_server.goxdcr.log` |
+| View, mapreduce | Views | `couchdb.log` |
+| FTS, full-text | FTS | `ns_server.fts.log` |
+| Analytics, cbas | Analytics | `ns_server.analytics*.log` |
 
 ### 3. Research Documentation
 

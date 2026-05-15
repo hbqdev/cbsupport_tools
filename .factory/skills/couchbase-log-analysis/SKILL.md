@@ -12,8 +12,8 @@ Expert patterns for searching Couchbase logs with ripgrep (rg).
 
 **memcached.log**: `2026-03-11T14:23:42.123456`
 **ns_server logs**: `[ns_server:info,2026-03-11T14:23:42.123Z]`
-**query.log**: `{"timestamp":"2026-03-11T14:23:42.123Z",...}`
-**indexer.log**: `2026-03-11T14:23:42.123456-05:00`
+**ns_server.query.log**: `{"timestamp":"2026-03-11T14:23:42.123Z",...}`
+**ns_server.indexer.log**: `2026-03-11T14:23:42.123456-05:00`
 
 ## Timestamp Filtering Pattern
 
@@ -87,11 +87,11 @@ rg -iN "network.*error|network.*timeout" ns_server.*.log
 rg -iN "cluster.*membership|node.*joined|node.*left" ns_server.info.log
 ```
 
-### Query (query.log, completed_requests.json)
+### Query (ns_server.query.log, completed_requests.json)
 
 **Query Timeouts**:
 ```bash
-rg -iN "timeout|exceeded.*second|query.*timeout" query.log
+rg -iN "timeout|exceeded.*second|query.*timeout" ns_server.query.log
 rg -iN '"code":1080|"code":12009' completed_requests.json  # timeout error codes
 ```
 
@@ -119,43 +119,43 @@ rg '"code":[^0]' completed_requests.json  # non-zero error codes
 rg -iN '"index":"?[^"]*"' completed_requests.json  # which indexes were used
 ```
 
-### Index (indexer.log, projector.log)
+### Index (ns_server.indexer.log, ns_server.projector.log)
 
 **Memory Warnings**:
 ```bash
-rg -iN "resident.*percentage|resident.*ratio|memory.*threshold" indexer.log
+rg -iN "resident.*percentage|resident.*ratio|memory.*threshold" ns_server.indexer.log
 rg -iN "indexer.*RAM.*percentage|RAM.*below.*threshold" ns_server.info.log
 ```
 
 **Index Build Issues**:
 ```bash
-rg -iN "index.*build.*failed|build.*error|creation.*failed" indexer.log
-rg -iN "index.*dropped|index.*deleted" indexer.log
+rg -iN "index.*build.*failed|build.*error|creation.*failed" ns_server.indexer.log
+rg -iN "index.*dropped|index.*deleted" ns_server.indexer.log
 ```
 
 **Performance**:
 ```bash
-rg -iN "scan.*latency|avg.*latency|slow.*scan" indexer.log
-rg -iN "items.*remaining|backlog|mutations.*queue" projector.log
+rg -iN "scan.*latency|avg.*latency|slow.*scan" ns_server.indexer.log
+rg -iN "items.*remaining|backlog|mutations.*queue" ns_server.projector.log
 ```
 
-### XDCR (goxdcr.log)
+### XDCR (ns_server.goxdcr.log)
 
 **Replication Issues**:
 ```bash
-rg -iN "replication.*failed|replication.*error|replication.*stopped" goxdcr.log
-rg -iN "connection.*timeout|connection.*failed" goxdcr.log
+rg -iN "replication.*failed|replication.*error|replication.*stopped" ns_server.goxdcr.log
+rg -iN "connection.*timeout|connection.*failed" ns_server.goxdcr.log
 ```
 
 **Lag/Backlog**:
 ```bash
-rg -iN "replication.*lag|backlog|docs.*remaining" goxdcr.log
-rg -iN "changes.*left|changes.*pending" goxdcr.log
+rg -iN "replication.*lag|backlog|docs.*remaining" ns_server.goxdcr.log
+rg -iN "changes.*left|changes.*pending" ns_server.goxdcr.log
 ```
 
 **Conflict Resolution**:
 ```bash
-rg -iN "conflict|merge.*failed|resolution.*error" goxdcr.log
+rg -iN "conflict|merge.*failed|resolution.*error" ns_server.goxdcr.log
 ```
 
 ### Views (couchdb.log)
@@ -278,7 +278,7 @@ rg -iN "DCP.*timeout" memcached.log
 # 3. Check if other components had issues at same time
 TIMESTAMP="2026-03-11T14:23:42"
 rg "$TIMESTAMP" ns_server.debug.log
-rg "$TIMESTAMP" query.log
+rg "$TIMESTAMP" ns_server.query.log
 ```
 
 ## Tips
