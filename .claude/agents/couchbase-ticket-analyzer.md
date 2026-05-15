@@ -193,13 +193,15 @@ Map issue keywords to components and their log files:
 | Keywords | Component | Log Files |
 |----------|-----------|-----------|
 | OOM, eviction, vBucket, DCP | KV | memcached.log |
-| Failover, rebalance, node down | Cluster | ns_server.debug.log, ns_server.error.log |
-| N1QL, query timeout | Query  |
+| Failover, rebalance, node down | Cluster | ns_server.debug.log, ns_server.info.log |
+| N1QL, query timeout | Query | ns_server.query.log, completed_requests.json |
 | GSI, index, plasma | Index | ns_server.indexer.log, ns_server.projector.log |
 | XDCR, replication | XDCR | ns_server.goxdcr.log |
 | View, mapreduce | Views | couchdb.log |
 | FTS, full-text | FTS | ns_server.fts.log |
 | Analytics, cbas | Analytics | ns_server.analytics*.log |
+
+See `.factory/skills/couchbase-log-analysis/SKILL.md` for the full rg pattern reference used in steps below.
 
 ### 3. Research Documentation
 
@@ -504,6 +506,135 @@ combined report (analysis_report.md with customer response at the end).
 ```
 
 **DO NOT create analysis_report.md or customer_response.md** - that's the manager's job after validation.
+
+## Log Search Reference
+
+Full pattern reference: `.factory/skills/couchbase-log-analysis/SKILL.md`
+
+### Timestamp Formats by Component
+
+| Log File | Format Example |
+|----------|---------------|
+| memcached.log | `2026-03-11T14:23:42.123456` |
+| ns_server.*.log | `[ns_server:info,2026-03-11T14:23:42.123Z]` |
+| ns_server.query.log | `{"timestamp":"2026-03-11T14:23:42.123Z",...}` |
+| ns_server.indexer.log | `2026-03-11T14:23:42.123456-05:00` |
+
+### Additional KV Patterns (memcached.log)
+
+```bash
+# Slow operations
+rg -iN "slow.*operation|operation.*exceeded|threshold.*exceeded" memcached.log
+
+# Disk issues
+rg -iN "disk.*full|no space|write.*failed|I/O error" memcached.log
+
+# Crash signals
+rg -iN "panic|segfault|core.*dump|fatal.*error|SIGSEGV" *.log
+rg -iN "crashed|terminated.*unexpectedly|abnormal.*termination" *.log
+```
+
+### Network Issues (ns_server.*.log)
+
+```bash
+rg -iN "ETIMEDOUT|ECONNREFUSED|connection refused" ns_server.*.log
+rg -iN "network.*error|network.*timeout" ns_server.*.log
+```
+
+### XDCR (ns_server.goxdcr.log)
+
+```bash
+# Replication failures
+rg -iN "replication.*failed|replication.*error|replication.*stopped" ns_server.goxdcr.log
+rg -iN "connection.*timeout|connection.*failed" ns_server.goxdcr.log
+
+# Lag / backlog
+rg -iN "replication.*lag|backlog|docs.*remaining|changes.*left|changes.*pending" ns_server.goxdcr.log
+
+# Conflict resolution
+rg -iN "conflict|merge.*failed|resolution.*error" ns_server.goxdcr.log
+```
+
+### FTS (ns_server.fts.log)
+
+```bash
+rg -iN "error|failed|timeout|panic" ns_server.fts.log
+rg -iN "index.*build|index.*error|bleve" ns_server.fts.log
+```
+
+### Views (couchdb.log)
+
+```bash
+rg -iN "view.*build.*error|view.*indexing.*failed" couchdb.log
+rg -iN "compaction.*failed|compaction.*error" couchdb.log
+```
+
+### Resource Exhaustion (any log)
+
+```bash
+rg -iN "too many|limit.*reached|quota.*exceeded|throttled" *.log
+```
+
+### Multi-Node Searches
+
+```bash
+# Count occurrences per node — KV
+for log in cbcollect_info_*/memcached.log; do
+  echo "=== $(basename $(dirname $log)) ==="
+  rg -ic "OOM" "$log"
+done
+
+# Count occurrences per node — ns_server
+for log in cbcollect_info_*/ns_server.debug.log; do
+  echo "=== $(basename $(dirname $log)) ==="
+  rg -ic "failover" "$log"
+done
+```
+
+### Data Extraction Helpers
+
+```bash
+# Extract node hostnames
+rg -oN 'ns_1@[\w\.-]+' ns_server.debug.log | sort -u
+
+# Extract error codes from completed_requests
+rg -oN '"code":\d+' completed_requests.json | sort | uniq -c | sort -rn
+
+# First and last timestamp of a pattern
+rg -oN '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' memcached.log | head -1  # first
+rg -oN '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' memcached.log | tail -1  # last
+```
+
+### Context Extraction
+
+```bash
+# ±10 lines around match
+rg -iN -C 10 "error pattern" logfile.log
+
+# 5 lines before, 15 after
+rg -iN -B 5 -A 15 "error pattern" logfile.log
+```
+
+### Cross-Component Correlation
+
+```bash
+# Find error, then check all components at the same timestamp
+TIMESTAMP="2026-03-11T14:23:42"
+rg "$TIMESTAMP" memcached.log
+rg "$TIMESTAMP" ns_server.debug.log
+rg "$TIMESTAMP" ns_server.query.log
+rg "$TIMESTAMP" ns_server.indexer.log
+rg "$TIMESTAMP" ns_server.goxdcr.log
+
+# Broad scan across all ns_server logs at once
+rg "$TIMESTAMP" ns_server.*.log
+```
+
+### Version-Specific Notes
+
+- **7.6.x**: Index resident ratio warnings introduced
+- **8.0.x**: New JSON log formats in some components
+- **Capella**: Different log paths and formats
 
 ## Quality Standards
 
