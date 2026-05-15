@@ -4,8 +4,6 @@ Couchbase support ticket analysis tools with AI-powered agents.
 
 ## Quick Start
 
-### GitHub Copilot CLI Agents
-
 Four custom agents are available for ticket analysis:
 
 | Agent | Role |
@@ -15,7 +13,19 @@ Four custom agents are available for ticket analysis:
 | **couchbase-docs-expert** | Documentation researcher — docs.couchbase.com, MBs, KB articles |
 | **couchbase-source-expert** | Source code researcher — searches github.com/couchbase for timers, defaults, error definitions |
 
-Always invoke via the main Copilot CLI context — never do manual log work in the main context.
+### AI CLI Agents (`.claude/agents/`)
+
+Agents are also available for the AI CLI. Invoke by name:
+
+```
+Analyze ticket 76783
+```
+
+The orchestrator (`ticket-agents-manager`) runs end-to-end analysis automatically.
+
+### GitHub Copilot CLI Agents
+
+The same agents are also available for GitHub Copilot CLI (`.github/copilot/agents/`).
 
 **Usage**:
 ```bash
@@ -68,5 +78,6 @@ $DIR_TICKETS/<ticket>/
 
 ## Documentation
 
-- **Agent docs**: `.github/copilot/agents/README.md`
+- **Agent definitions**: `.claude/agents/`
+- **Copilot CLI agent docs**: `.github/copilot/agents/README.md`
 - **Legacy agents** (Copilot Workspace): `.factory/droids/`
