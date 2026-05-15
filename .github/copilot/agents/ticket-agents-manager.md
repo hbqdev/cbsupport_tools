@@ -131,8 +131,8 @@ Perform these validation checks on the analysis:
 - ✅ **Correct snapshot used**: Were multiple snapshots present? Is the latest (or incident-window-closest) one used? Is the choice documented?
 - ✅ **Log files searched**: Did analyzer search relevant component logs?
   - For KV issues: memcached.log analyzed?
-  - For Query issues: query.log, completed_requests.json checked?
-  - For Index/latency issues: **ALL FOUR required** — query.log errors, indexer.log state transitions, replica availability check, GSI retry path?
+  - For Query issues: ns_server.query.log, completed_requests.json checked?
+  - For Index/latency issues: **ALL FOUR required** — ns_server.query.log errors, ns_server.indexer.log state transitions, replica availability check, GSI retry path?
   - For cluster issues: ns_server logs reviewed?
 - ✅ **Causal claims backed by both-sides evidence**: For every "A caused B" claim, is there log evidence from BOTH A and B — not just temporal proximity?
 - ✅ **Index replica analysis**: For any "Index not ready" issue — were replicas checked? Were they in ready state? Was the GSI endpoint in the error matched to the failing node?

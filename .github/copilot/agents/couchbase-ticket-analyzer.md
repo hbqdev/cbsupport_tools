@@ -194,12 +194,12 @@ Map issue keywords to components and their log files:
 |----------|-----------|-----------|
 | OOM, eviction, vBucket, DCP | KV | memcached.log |
 | Failover, rebalance, node down | Cluster | ns_server.debug.log, ns_server.error.log |
-| N1QL, query timeout | Query | query.log, completed_requests.json |
-| GSI, index, plasma | Index | indexer.log, projector.log |
-| XDCR, replication | XDCR | goxdcr.log |
+| N1QL, query timeout | Query  |
+| GSI, index, plasma | Index | ns_server.indexer.log, ns_server.projector.log |
+| XDCR, replication | XDCR | ns_server.goxdcr.log |
 | View, mapreduce | Views | couchdb.log |
-| FTS, full-text | FTS | fts.log |
-| Analytics, cbas | Analytics | analytics_*.log |
+| FTS, full-text | FTS | ns_server.fts.log |
+| Analytics, cbas | Analytics | ns_server.analytics*.log |
 
 ### 3. Research Documentation
 
@@ -268,71 +268,71 @@ rg -iN "DCP|BufferLogFull|stream.*fail|connection.*close" cbcollect_*/memcached.
 rg -iN "Too many open connections|connection.*refuse|connection.*reset" cbcollect_*/memcached.log
 ```
 
-**Query issues (query.log, completed_requests.json):**
+**Query issues (ns_server.query.log, completed_requests.json):**
 ```bash
 # Timeout detection
-rg -iN "timeout|duration.*[0-9]{4,}" cbcollect_*/query.log
+rg -iN "timeout|duration.*[0-9]{4,}" cbcollect_*/ns_server.query.log
 
 # Slow queries from completed_requests
 jq '.[] | select(.elapsedTime > "5s")' cbcollect_*/completed_requests.json
 
 # Primary scan detection
-rg -iN "UnboundedScan|PrimaryScan|_all_docs" cbcollect_*/query.log
+rg -iN "UnboundedScan|PrimaryScan|_all_docs" cbcollect_*/ns_server.query.log
 ```
 
-**Index issues (indexer.log) — and for any query latency complaint, ALWAYS analyze indexer.log:**
+**Index issues (ns_server.indexer.log) — and for any query latency complaint, ALWAYS analyze indexer.log:**
 
 When the customer's primary complaint is query latency or `Index not ready for serving queries` errors, you MUST do all of the following — not just check for memory warnings:
 
 **Step 1 — Identify impacted queries from query.log and completed_requests.json:**
 ```bash
 # Find all slow/errored queries during the incident window
-rg -iN "Index not ready|GSI.*error|index.*not found|timeout" cbcollect_*/query.log | rg "<TIMESTAMP_WINDOW>"
+rg -iN "Index not ready|GSI.*error|index.*not found|timeout" cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
 
 # Slow queries by elapsed time — identify which index names / keyspaces were involved
 jq -r 'select(.elapsedTime != null) | [.requestTime, .elapsedTime, .statement[0:120], .errors[0].msg] | @tsv' \
   cbcollect_*/completed_requests.json 2>/dev/null | sort -k2 -rn | head -30
 
 # Count "Index not ready" errors per index name
-rg -oiN 'Index not ready.*index [^ ]+' cbcollect_*/query.log | sort | uniq -c | sort -rn | head -20
+rg -oiN 'Index not ready.*index [^ ]+' cbcollect_*/ns_server.query.log | sort | uniq -c | sort -rn | head -20
 ```
 
 **Step 2 — Check index state on each Query/Index node during the window:**
 ```bash
 # Index state transitions (ready → warmup → building → etc.)
-rg -iN "Index.*state.*change|indexState|index.*warming|index.*ready|index.*building" cbcollect_*/indexer.log | rg "<TIMESTAMP_WINDOW>"
+rg -iN "Index.*state.*change|indexState|index.*warming|index.*ready|index.*building" cbcollect_*/ns_server.indexer.log | rg "<TIMESTAMP_WINDOW>"
 
 # Index not ready / scan errors from the indexer's perspective
-rg -iN "not ready|ErrIndexNotReady|ErrScanTimedOut|scan.*fail" cbcollect_*/indexer.log | rg "<TIMESTAMP_WINDOW>"
+rg -iN "not ready|ErrIndexNotReady|ErrScanTimedOut|scan.*fail" cbcollect_*/ns_server.indexer.log | rg "<TIMESTAMP_WINDOW>"
 
 # Index load/recovery events after node rejoin
-rg -iN "loading index|recovery|bootstrap|recoveringIndex|indexer.*start" cbcollect_*/indexer.log | rg "<±5 minute window>"
+rg -iN "loading index|recovery|bootstrap|recoveringIndex|indexer.*start" cbcollect_*/ns_server.indexer.log | rg "<±5 minute window>"
 ```
 
 **Step 3 — Check replica index availability on surviving nodes:**
 ```bash
 # On each non-failed node: were replica indexes in ready state?
-rg -iN "replica|numReplica|replicaId" cbcollect_*/indexer.log | rg "<TIMESTAMP_WINDOW>"
+rg -iN "replica|numReplica|replicaId" cbcollect_*/ns_server.indexer.log | rg "<TIMESTAMP_WINDOW>"
 
 # Check if GSI scan client attempted retry against replica
-rg -iN "Trying scan again with replica|retry.*replica|replica.*retry" cbcollect_*/query.log | rg "<TIMESTAMP_WINDOW>"
+rg -iN "Trying scan again with replica|retry.*replica|replica.*retry" cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
 
 # Check if replica was actually available (not in warmup)
-rg -iN "Index not ready for serving queries" cbcollect_*/query.log | rg -oE '"[^"]*:[0-9]+"' | sort | uniq -c | sort -rn
+rg -iN "Index not ready for serving queries" cbcollect_*/ns_server.query.log | rg -oE '"[^"]*:[0-9]+"' | sort | uniq -c | sort -rn
 # This shows which GSI endpoint (host:port) was serving the error — compare against failed/recovering nodes
 ```
 
 **Step 4 — Explain the GSI retry decision:**
 After checking Steps 2 and 3, explicitly answer:
-- Were replica indexes defined? (check indexer.log or `curl http://node:9102/getIndexStatus` output if present)
+- Were replica indexes defined? (check ns_server.indexer.log or `curl http://node:9102/getIndexStatus` output if present)
 - Were replicas on surviving nodes in `ready` state during the incident window?
 - If replicas were ready but GSI still failed: note the GSI scan client endpoint in the error and explain which node it maps to
 - If no replicas: state this is the gap — single point of failure on each index
 
 ```bash
 # General index health / memory
-rg -iN "memory.*warning|memory_quota.*exceed|plasma.*memory" cbcollect_*/indexer.log
-rg -iN "build.*fail|build.*error|panic|fatal" cbcollect_*/indexer.log
+rg -iN "memory.*warning|memory_quota.*exceed|plasma.*memory" cbcollect_*/ns_server.indexer.log
+rg -iN "build.*fail|build.*error|panic|fatal" cbcollect_*/ns_server.indexer.log
 ```
 
 **Cluster issues (ns_server logs):**
@@ -395,7 +395,7 @@ rg -iN "connection.*refused|connection.*reset|unable to connect" ticket_files/*
 Before writing "event A caused event B" in any report, you must have log evidence from **both sides** of the causal chain:
 
 - ❌ WRONG: "The failover removed Query/Index capacity, which caused latency" (temporal correlation only — no latency evidence shown)
-- ✅ CORRECT: Show (a) the failover timestamp, (b) specific query errors from query.log tied to specific indexes on the failed node, (c) indexer.log confirming those indexes were not ready on surviving nodes
+- ✅ CORRECT: Show (a) the failover timestamp, (b) specific query errors from ns_server.query.log tied to specific indexes on the failed node, (c) ns_server.indexer.log confirming those indexes were not ready on surviving nodes
 - ❌ WRONG: "Index not ready errors were caused by the failover" (assumes the failing index was on the failed node — must verify)
 - ✅ CORRECT: Show which endpoint (`host:port`) in the GSI error matches the failed/recovering node
 
@@ -456,7 +456,7 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
   
   "logs_analyzed": {
     "cbcollect_directories": ["node1", "node2", "node3"],
-    "server_logs_searched": ["memcached.log", "ns_server.debug.log", "query.log"],
+    "server_logs_searched": ["memcached.log", "ns_server.debug.log", "ns_server.query.log"],
     "ticket_files_analyzed": ["app_log.txt", "sdk_trace.log"]
   },
   
