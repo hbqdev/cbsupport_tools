@@ -127,11 +127,15 @@ Perform these validation checks on the analysis:
 
 #### B. Technical Quality Checks
 
+- ✅ **Primary complaint addressed**: Does the analysis stay focused on the customer's stated issue (e.g., latency, errors), not drift into describing secondary events (e.g., failover) as if they were the main story?
+- ✅ **Correct snapshot used**: Were multiple snapshots present? Is the latest (or incident-window-closest) one used? Is the choice documented?
 - ✅ **Log files searched**: Did analyzer search relevant component logs?
   - For KV issues: memcached.log analyzed?
   - For Query issues: query.log, completed_requests.json checked?
-  - For Index issues: indexer.log examined?
+  - For Index/latency issues: **ALL FOUR required** — query.log errors, indexer.log state transitions, replica availability check, GSI retry path?
   - For cluster issues: ns_server logs reviewed?
+- ✅ **Causal claims backed by both-sides evidence**: For every "A caused B" claim, is there log evidence from BOTH A and B — not just temporal proximity?
+- ✅ **Index replica analysis**: For any "Index not ready" issue — were replicas checked? Were they in ready state? Was the GSI endpoint in the error matched to the failing node?
 
 - ✅ **Timestamp precision**: Did analyzer use ±2 minute windows around issue time?
 - ✅ **Multi-node analysis**: For clusters, were all nodes examined?
