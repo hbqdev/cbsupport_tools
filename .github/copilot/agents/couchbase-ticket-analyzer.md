@@ -217,24 +217,64 @@ Map issue keywords to components and their log files:
 | FTS, full-text | FTS | `ns_server.fts.log` |
 | Analytics, cbas | Analytics | `ns_server.analytics*.log` |
 
-### 3. Research Documentation
+### 3. Research Documentation + Jira MB Search
 
 **MANDATORY: Use the couchbase-docs-expert agent for ALL documentation research.**
 
 **CRITICAL RULE: Never make claims about "expected behavior" or "normal behavior" without documented evidence.**
 
-For each error/symptom AND for any behavioral questions, consult the documentation expert using the task tool with agent_type "general-purpose" and name "couchbase-docs-expert":
+#### 3a. Jira MB Search (MANDATORY — run for every ticket)
+
+**Before or in parallel with log analysis**, search Jira for known bugs matching the symptoms and CBS version. Credentials are in `~/.couchbase-support/jira.env`.
+
+```bash
+source ~/.couchbase-support/jira.env
+
+# Search by error message / symptom keyword
+JQL='project=MB AND text~"<error_keyword>" AND affectedVersion="<CBS_VERSION>" ORDER BY updated DESC'
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  -G "$JIRA_INSTANCE_URL/rest/api/2/search" \
+  --data-urlencode "jql=$JQL" \
+  --data-urlencode "maxResults=10" \
+  --data-urlencode "fields=summary,status,fixVersions,versions,description" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for i in d.get('issues', []):
+    f = i['fields']
+    print(i['key'], '-', f['summary'])
+    print('  Status:', f['status']['name'])
+    print('  Fix versions:', [v['name'] for v in f.get('fixVersions',[])])
+    print('  Affected:', [v['name'] for v in f.get('versions',[])])
+    print('  Desc:', (f.get('description') or '')[:300])
+    print()
+"
+
+# Also search without version filter for unresolved issues
+JQL='project=MB AND text~"<error_keyword>" AND resolution=Unresolved ORDER BY updated DESC'
+```
+
+**Required Jira searches for every analysis:**
+1. Search for the primary error message or symptom (e.g., `"disk_almost_full"`, `"Index not ready"`, `"auto_failover"`)
+2. Search filtered to the customer's exact CBS version (e.g., `affectedVersion="7.6.3"`)
+3. Search for any component-specific known issues (e.g., `component=KV AND affectedVersion="X"`)
+
+**Document every MB found** in `analysis_metadata.json` under `documentation_references`, whether it matches or rules out the issue. If no matching MB exists, state that explicitly.
+
+#### 3b. Docs Expert Research
+
+For each error/symptom AND for any behavioral questions, consult the documentation expert using the task tool with agent_type "general-purpose" and name "couchbase-docs-expert". **Pass your Jira search results to it** so it can do deeper MB investigation if needed:
 
 Example queries:
-- "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3?"
-- "How does DCP buffer management work? What causes BufferLogFull?"
-- "Are there known issues with index memory warnings in version 7.6.3?"
+- "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3? Also search Jira for MB tickets matching OOM and version 7.6.3."
+- "How does DCP buffer management work? What causes BufferLogFull? Search for MB tickets on BufferLogFull."
+- "Are there known issues with disk_almost_full or compaction in version 7.2.x? Check Jira."
 - "Does XDCR pause during operator upgrades? Is this documented behavior?"
-- "What happens to replication during rolling cluster upgrades?"
 
-The docs expert will search docs.couchbase.com, issues.couchbase.com, and support.couchbase.com in parallel and return authoritative information with sources.
+The docs expert will search docs.couchbase.com, issues.couchbase.com (via Jira REST API), and support.couchbase.com in parallel.
 
-**ALWAYS delegate documentation research to the docs expert** - don't make assumptions or use general knowledge. This ensures consistent, accurate, and cited information.
+**ALWAYS delegate deep documentation research to the docs expert** - don't make assumptions or use general knowledge.
 
 **If docs expert finds no documentation:**
 - State "No official documentation found for this behavior"

@@ -149,25 +149,63 @@ Map issue keywords to components and their log files:
 | FTS, full-text | FTS | ns_server.fts.log |
 | Analytics, cbas | Analytics | ns_server.analytics*.log |
 
-### 3. Research Documentation
+### 3. Research Documentation + Jira MB Search
 
 **Use the couchbase-docs-expert agent for all documentation research.**
 
-For each error/symptom, consult the documentation expert:
+#### 3a. Jira MB Search (MANDATORY — run for every ticket)
+
+**Before or in parallel with log analysis**, search Jira directly for known bugs matching the symptoms and CBS version. Credentials are in `~/.couchbase-support/jira.env`.
+
 ```bash
-# Example: Look up an error
-droid task couchbase-docs-expert "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3?"
+source ~/.couchbase-support/jira.env
 
-# Example: Verify feature behavior
-droid task couchbase-docs-expert "How does DCP buffer management work? What causes BufferLogFull?"
+# Search by error message / symptom keyword + version
+JQL='project=MB AND text~"<error_keyword>" AND affectedVersion="<CBS_VERSION>" ORDER BY updated DESC'
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  -G "$JIRA_INSTANCE_URL/rest/api/2/search" \
+  --data-urlencode "jql=$JQL" \
+  --data-urlencode "maxResults=10" \
+  --data-urlencode "fields=summary,status,fixVersions,versions,description" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for i in d.get('issues', []):
+    f = i['fields']
+    print(i['key'], '-', f['summary'])
+    print('  Status:', f['status']['name'])
+    print('  Fix versions:', [v['name'] for v in f.get('fixVersions',[])])
+    print('  Affected:', [v['name'] for v in f.get('versions',[])])
+    print('  Desc:', (f.get('description') or '')[:300])
+    print()
+"
 
-# Example: Check for known bugs
-droid task couchbase-docs-expert "Are there known issues with index memory warnings in version 7.6.3?"
+# Also search unresolved issues without version filter
+JQL='project=MB AND text~"<error_keyword>" AND resolution=Unresolved ORDER BY updated DESC'
 ```
 
-The docs expert will search docs.couchbase.com, issues.couchbase.com, and support.couchbase.com in parallel and return authoritative information with sources.
+**Required Jira searches for every analysis:**
+1. Primary error message / symptom keyword (e.g., `"disk_almost_full"`, `"Index not ready"`)
+2. Same query filtered to customer's exact CBS version (`affectedVersion="X.Y.Z"`)
+3. Component-specific unresolved issues for the CBS version
 
-**Always delegate documentation research to the docs expert** - don't search directly. This ensures consistent, accurate information.
+**Document every MB found** in `analysis_metadata.json` under `documentation_references`. If no matching MB exists, state that explicitly.
+
+#### 3b. Docs Expert Research
+
+For each error/symptom, consult the documentation expert. Pass Jira findings for deeper investigation:
+```bash
+# Example: Look up an error and check Jira
+droid task couchbase-docs-expert "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3? Also search Jira for MB tickets matching OOM and version 7.6.3."
+
+# Example: Check for known bugs
+droid task couchbase-docs-expert "Are there known issues with disk_almost_full or compaction in version 7.2.x? Check Jira."
+```
+
+The docs expert will search docs.couchbase.com, issues.couchbase.com (via Jira REST API), and support.couchbase.com in parallel and return authoritative information with sources.
+
+**Always delegate deep documentation research to the docs expert** - don't search directly without it.
 
 ### 4. Analyze Logs with Timestamp Precision
 

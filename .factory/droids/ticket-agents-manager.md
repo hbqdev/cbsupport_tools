@@ -94,10 +94,12 @@ Perform these validation checks on the analysis:
 - ✅ **Multi-node analysis**: For clusters, were all nodes examined?
 - ✅ **Client-side logs**: If ticket_files exist, were they analyzed?
 
-#### C. Documentation Verification
+#### C. Documentation + Jira Verification
 
+- ✅ **Jira MB search completed**: Did the analyzer run Jira searches for the primary symptoms AND the customer's CBS version? Are MB results (or explicit "no matching MB found") documented in `documentation_references`?
+- ✅ **Jira credentials used**: Were searches done via REST API (`~/.couchbase-support/jira.env`) not just web_fetch?
 - ✅ **Docs consulted**: Did analyzer call couchbase-docs-expert?
-- ✅ **Known issues checked**: Were MBs (Jira tickets) referenced?
+- ✅ **Known issues checked**: Were MBs (Jira tickets) referenced and their fix/affected versions compared to the customer's version?
 - ✅ **Version-specific behavior**: Were version differences noted?
 - ✅ **Sources cited**: Are documentation links provided?
 
