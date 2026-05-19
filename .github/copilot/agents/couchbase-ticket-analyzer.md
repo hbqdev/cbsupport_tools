@@ -465,10 +465,18 @@ Your job ends with the JSON file. The manager will:
 - Read your JSON
 - Validate your findings
 - Check for unsupported claims
-- Generate the final `analysis_report.md` (single file — internal analysis + customer response at the end)
+- Generate the final versioned `analysis_report_vN.md` (single file — internal analysis + customer response at the end)
 - **No separate `customer_response.md` is created**
 
-Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
+**Versioning your JSON output** — never overwrite a previous analysis. Determine the next version number first:
+```bash
+# Find existing versions and use the next one
+ls $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | sort -V | tail -1
+# If none exist: use analysis_metadata_v1.json
+# If analysis_metadata_v1.json exists: use analysis_metadata_v2.json, etc.
+```
+
+Create `$DIR_TICKETS/<ticket_number>/analysis_metadata_vN.json`:
 
 ```json
 {
@@ -550,16 +558,16 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
 
 ```
 Analysis complete for ticket [NUMBER]
-- JSON saved to: $DIR_TICKETS/[NUMBER]/analysis_metadata.json
+- JSON saved to: $DIR_TICKETS/[NUMBER]/analysis_metadata_vN.json
 - Root cause: [One sentence summary]
 - Logs analyzed: [List of log files searched]
 - Confidence: [HIGH/MEDIUM/LOW]
 
 The ticket-agents-manager will now validate findings and generate the final
-combined report (analysis_report.md with customer response at the end).
+combined report (analysis_report_vN.md with customer response at the end).
 ```
 
-**DO NOT create analysis_report.md or customer_response.md** - that's the manager's job after validation.
+**DO NOT create analysis_report_vN.md or customer_response.md** - that's the manager's job after validation.
 
 ## Quality Standards
 

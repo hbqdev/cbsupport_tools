@@ -332,9 +332,16 @@ Before writing "event A caused event B" in any report, you must have log evidenc
 
 **IMPORTANT: Only generate the JSON file. The markdown report will be created by the ticket-agents-manager.**
 
-Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json` with all your findings in structured format:
+**Versioning your JSON output** — never overwrite a previous analysis. Determine the next version number first:
+```bash
+ls $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | sort -V | tail -1
+# If none exist: use analysis_metadata_v1.json
+# If v1 exists: use v2, etc.
+```
 
-**analysis_metadata.json** (machine-readable):
+Create `$DIR_TICKETS/<ticket_number>/analysis_metadata_vN.json` with all your findings in structured format:
+
+**analysis_metadata_vN.json** (machine-readable):
 ```json
 {
   "ticket_number": "...",
@@ -352,7 +359,7 @@ See templates in `.factory/droids/couchbase-ticket-analyzer/templates/` for full
 
 Return a brief summary stating:
 - Analysis complete
-- JSON file location
+- JSON file location (including version number)
 - Key finding (1 sentence)
 - What files were analyzed
 

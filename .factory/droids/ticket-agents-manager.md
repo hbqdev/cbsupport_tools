@@ -44,14 +44,14 @@ Working directory: /Users/tin.tran/dev/couchbase/cbsupport_tools"
 - Download logs if needed
 - Analyze server and client logs
 - Research documentation
-- Generate analysis_report.md + analysis_metadata.json
+- Generate versioned analysis_metadata_vN.json
 
 ### 2. Validate Output Exists
 
-Once analyzer completes, verify the JSON file exists:
+Once analyzer completes, find the latest versioned JSON:
 
 ```bash
-ls -lh $DIR_TICKETS/<ticket_number>/analysis_metadata.json
+ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1
 ```
 
 **If file is missing:**
@@ -61,10 +61,11 @@ ls -lh $DIR_TICKETS/<ticket_number>/analysis_metadata.json
 
 ### 3. Read Analysis Metadata
 
-Read the JSON file to understand the findings:
+Read the latest versioned JSON:
 
 ```bash
-cat $DIR_TICKETS/<ticket_number>/analysis_metadata.json
+LATEST_JSON=$(ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1)
+cat "$LATEST_JSON"
 ```
 
 This contains all the structured analysis data from the ticket-analyzer.
@@ -161,7 +162,13 @@ Best regards,
 
 **This is your main task:** Transform the JSON metadata into a comprehensive human-readable report.
 
-Create `$DIR_TICKETS/<ticket_number>/analysis_report.md` with the following structure:
+**Versioning the report** — never overwrite a previous report. Use the same version number as the JSON:
+```bash
+ls $DIR_TICKETS/<ticket_number>/analysis_report_v*.md 2>/dev/null | sort -V | tail -1
+# Use the same vN as the analysis_metadata_vN.json you are working from
+```
+
+Create `$DIR_TICKETS/<ticket_number>/analysis_report_vN.md` with the following structure:
 
 ```markdown
 # Ticket #[NUMBER] Analysis Report
@@ -277,8 +284,8 @@ References consulted:
 
 ## Files
 
-- **Analysis Report**: `analysis_report.md` (this file)
-- **Structured Data**: `analysis_metadata.json`
+- **Analysis Report**: `analysis_report_vN.md` (this file)
+- **Structured Data**: `analysis_metadata_vN.json`
 
 ---
 
@@ -288,7 +295,8 @@ References consulted:
 
 ```
 
-**Save this report to `$DIR_TICKETS/<ticket_number>/analysis_report.md`**, then return a brief summary to the user.
+**Save this report to `$DIR_TICKETS/<ticket_number>/analysis_report_vN.md`**, then return a brief summary to the user.
+**⛔ DO NOT overwrite a previous `analysis_report_vN.md`.** Always increment the version number.
 
 ## Error Handling
 
@@ -327,7 +335,7 @@ If analyzer times out but files are partially downloaded:
 
 Always provide TWO outputs:
 
-1. **Save analysis_report.md file** at `$DIR_TICKETS/<ticket_number>/analysis_report.md` with complete analysis and customer response
+1. **Save analysis_report_vN.md file** at `$DIR_TICKETS/<ticket_number>/analysis_report_vN.md` with complete analysis and customer response
 2. **Return brief summary** to user with key points and file location
 
 The brief summary returned to user should be:
@@ -349,21 +357,22 @@ The brief summary returned to user should be:
 ✅ Drafted and ready to send
 
 ### Files Created
-- **Complete Report**: analysis_report.md ← Review this for full analysis and customer response
-- **Structured Data**: analysis_metadata.json (from analyzer)
+- **Complete Report**: analysis_report_vN.md ← Review this for full analysis and customer response
+- **Structured Data**: analysis_metadata_vN.json (from analyzer)
 
 ### Next Steps
 1. [Top action item]
 2. [Second action]
 3. [Third if needed]
 
-See `$DIR_TICKETS/[NUMBER]/analysis_report.md` for complete analysis and customer response.
+See `$DIR_TICKETS/[NUMBER]/analysis_report_vN.md` for complete analysis and customer response.
 ```
 
 ## Important Notes
 
 - **Don't re-analyze logs yourself** - That's the analyzer's job. Your job is to review its work.
 - **Don't search documentation yourself** - Use couchbase-docs-expert if needed.
+- **Always version outputs** - Never overwrite previous analysis files. Check existing versions and increment.
 - **Do be critical** - If analysis is incomplete or wrong, say so clearly.
 - **Do be helpful** - Suggest how to fix gaps or what additional info is needed.
 - **Always draft customer response** - Even if analysis is incomplete, provide what you can.
@@ -378,7 +387,7 @@ User: "Analyze ticket 76783"
 Manager (you):
 1. Invoke couchbase-ticket-analyzer for ticket 76783
 2. Wait for completion
-3. Read analysis_report.md and analysis_metadata.json
+3. Read analysis_report_vN.md and analysis_metadata_vN.json
 4. Perform all quality checks
 5. Draft customer response
 6. Generate final summary

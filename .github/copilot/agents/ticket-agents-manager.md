@@ -81,10 +81,11 @@ Working directory: /Users/tin.tran/dev/couchbase/cbsupport_tools"
 
 ### 2. Validate Output Exists
 
-Once analyzer completes, verify the JSON file exists:
+Once analyzer completes, find the latest versioned JSON:
 
 ```bash
-ls -lh $DIR_TICKETS/<ticket_number>/analysis_metadata.json
+# Find the latest analysis_metadata version
+ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1
 ```
 
 **If file is missing:**
@@ -94,10 +95,12 @@ ls -lh $DIR_TICKETS/<ticket_number>/analysis_metadata.json
 
 ### 3. Read Analysis Metadata
 
-Read the JSON file to understand the findings:
+Read the latest versioned JSON:
 
 ```bash
-cat $DIR_TICKETS/<ticket_number>/analysis_metadata.json
+# Always read the latest version
+LATEST_JSON=$(ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1)
+cat "$LATEST_JSON"
 ```
 
 This contains all the structured analysis data from the ticket-analyzer.
@@ -246,7 +249,16 @@ Best regards,
 
 **This is your main task:** Transform the JSON metadata into a single comprehensive file that contains both the internal analysis AND the customer-facing response at the end.
 
-**YOU create analysis_report.md** - not the analyzer. The analyzer only creates the JSON.
+**Versioning the report** — never overwrite a previous report. Determine the next version number first:
+```bash
+# Find existing report versions and use the next one
+ls $DIR_TICKETS/<ticket_number>/analysis_report_v*.md 2>/dev/null | sort -V | tail -1
+# If none exist: use analysis_report_v1.md
+# If analysis_report_v1.md exists: use analysis_report_v2.md, etc.
+# Use the same version number as the analysis_metadata_vN.json you are working from
+```
+
+**YOU create analysis_report_vN.md** - not the analyzer. The analyzer only creates the JSON.
 **DO NOT create a separate customer_response.md.** Everything goes in one file.
 
 Before writing the report, validate:
@@ -255,7 +267,7 @@ Before writing the report, validate:
 - ⚠️ Flag any unsupported claims you find
 - ⚠️ Note any missing analysis in your report
 
-Create `$DIR_TICKETS/<ticket_number>/analysis_report.md` with the following structure:
+Create `$DIR_TICKETS/<ticket_number>/analysis_report_vN.md` with the following structure:
 
 ```markdown
 # Ticket #[NUMBER] Analysis Report
@@ -399,9 +411,10 @@ Couchbase Support
 
 ```
 
-**Save this report to `$DIR_TICKETS/<ticket_number>/analysis_report.md`** (single file — no separate customer_response.md), then return a brief summary to the user.
+**Save this report to `$DIR_TICKETS/<ticket_number>/analysis_report_vN.md`** (single file — no separate customer_response.md), then return a brief summary to the user.
 
-**⛔ DO NOT create a separate `customer_response.md`.** The customer response is always the final section of `analysis_report.md`.
+**⛔ DO NOT create a separate `customer_response.md`.** The customer response is always the final section of `analysis_report_vN.md`.
+**⛔ DO NOT overwrite a previous `analysis_report_vN.md`.** Always increment the version number.
 
 ## Error Handling
 
@@ -442,7 +455,7 @@ If analyzer times out but files are partially downloaded:
 
 Always provide TWO outputs:
 
-1. **Save analysis_report.md file** at `$DIR_TICKETS/<ticket_number>/analysis_report.md` with complete analysis and customer response
+1. **Save analysis_report_vN.md file** at `$DIR_TICKETS/<ticket_number>/analysis_report_vN.md` with complete analysis and customer response
 2. **Return brief summary** to user with key points and file location
 
 The brief summary returned to user should be:
@@ -464,21 +477,22 @@ The brief summary returned to user should be:
 ✅ Drafted and ready to send
 
 ### Files Created
-- **Complete Report**: analysis_report.md ← Review this for full analysis and customer response
-- **Structured Data**: analysis_metadata.json (from analyzer)
+- **Complete Report**: analysis_report_vN.md ← Review this for full analysis and customer response
+- **Structured Data**: analysis_metadata_vN.json (from analyzer)
 
 ### Next Steps
 1. [Top action item]
 2. [Second action]
 3. [Third if needed]
 
-See `$DIR_TICKETS/[NUMBER]/analysis_report.md` for complete analysis and customer response.
+See `$DIR_TICKETS/[NUMBER]/analysis_report_vN.md` for complete analysis and customer response.
 ```
 
 ## Important Notes
 
-- **Analyzer creates JSON only** - The couchbase-ticket-analyzer creates analysis_metadata.json
-- **Manager creates markdown report** - YOU create analysis_report.md after validating JSON
+- **Analyzer creates JSON only** - The couchbase-ticket-analyzer creates analysis_metadata_vN.json
+- **Manager creates markdown report** - YOU create analysis_report_vN.md after validating JSON
+- **Always version outputs** - Never overwrite previous analysis files. Check existing versions and increment.
 - **Don't trust blindly** - Validate the analyzer's findings before using them
 - **Re-invoke docs expert if needed** - If analyzer made unsupported claims, verify yourself
 - **Do be critical** - If analysis is incomplete or wrong, say so clearly in your report
