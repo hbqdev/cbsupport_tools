@@ -349,13 +349,19 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata_vN.json` with all your fi
   "root_cause": {"summary": "...", "evidence": [...]},
   "logs_analyzed": [...],
   "documentation_references": [...],
-  "recommended_actions": [...]
+  "recommended_actions": [...],
+  "customer_response_draft": {
+    "subject": "Re: [Ticket Subject]",
+    "body": "Hi [Customer Name],\n\nThank you for reaching out to Couchbase Support.\n\n**Summary**\n[One or two sentences summarizing what was found.]\n\n**Root Cause**\n[Clear, customer-friendly explanation of the root cause. Avoid excessive jargon. Include the key verbatim log line(s) that confirm the finding.]\n\n**Recommendations**\n1. [Immediate action with specifics]\n2. [Next step]\n3. [Long-term prevention if applicable]\n\n**Next Steps**\n[What support will do next, or what the customer should do.]\n\nPlease let us know if you have any questions.\n\nBest regards,\n[Your name]\nCouchbase Support"
+  }
 }
 ```
 
 See templates in `.factory/droids/couchbase-ticket-analyzer/templates/` for full structure.
 
 **After saving the JSON file, your job is complete.** The ticket-agents-manager will read your JSON and create the human-readable markdown report with customer response.
+
+**⛔ `customer_response_draft` is MANDATORY** — every `analysis_metadata_vN.json` must contain a fully written `customer_response_draft.body`. A template placeholder is not acceptable. Write the actual response based on your findings.
 
 Return a brief summary stating:
 - Analysis complete

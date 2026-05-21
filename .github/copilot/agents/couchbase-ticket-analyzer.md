@@ -550,7 +550,12 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata_vN.json`:
   
   "limitations": [
     "Any data gaps, missing logs, or uncertainties"
-  ]
+  ],
+
+  "customer_response_draft": {
+    "subject": "Re: [Ticket Subject]",
+    "body": "Hi [Customer Name],\n\nThank you for reaching out to Couchbase Support.\n\n**Summary**\n[One or two sentences summarizing what was found.]\n\n**Root Cause**\n[Clear, customer-friendly explanation of the root cause. Avoid excessive jargon. Include the key verbatim log line(s) that confirm the finding.]\n\n**Recommendations**\n1. [Immediate action with specifics]\n2. [Next step]\n3. [Long-term prevention if applicable]\n\n**Next Steps**\n[What support will do next, or what the customer should do.]\n\nPlease let us know if you have any questions.\n\nBest regards,\n[Your name]\nCouchbase Support"
+  }
 }
 ```
 
@@ -562,10 +567,13 @@ Analysis complete for ticket [NUMBER]
 - Root cause: [One sentence summary]
 - Logs analyzed: [List of log files searched]
 - Confidence: [HIGH/MEDIUM/LOW]
+- Customer response draft: included in JSON under customer_response_draft.body
 
 The ticket-agents-manager will now validate findings and generate the final
 combined report (analysis_report_vN.md with customer response at the end).
 ```
+
+**⛔ `customer_response_draft` is MANDATORY** — every `analysis_metadata_vN.json` must contain a fully written `customer_response_draft.body`. A template placeholder is not acceptable. Write the actual response based on your findings.
 
 **DO NOT create analysis_report_vN.md or customer_response.md** - that's the manager's job after validation.
 

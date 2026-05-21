@@ -199,7 +199,9 @@ This ensures the customer always receives the most accurate information even whe
 
 ### 6. Draft Customer Response
 
-Based on the analysis, draft a professional customer response. Use this template:
+**Start with the `customer_response_draft` from the analyzer's JSON** — the analyzer always includes a `customer_response_draft.body` field. Read it from the metadata JSON and use it as your starting point. Refine it based on your QA review: correct any inaccuracies, add missing evidence, improve tone.
+
+If the JSON is missing `customer_response_draft` (older analysis), draft from scratch using this template:
 
 ```markdown
 ## Customer Response Draft
