@@ -186,6 +186,23 @@ Read `$DIR_TICKETS/<ticket_number>/ticket_timeline.json` and extract:
 ls -lt $DIR_TICKETS/<ticket_number>/snapshots/ 2>/dev/null || ls -lt $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null | head -20
 ```
 
+**Check for `cbopinfo` directories in the snapshot** — these contain Couchbase Autonomous Operator (CAO) logs and are present on CAO-managed clusters:
+```bash
+ls $DIR_TICKETS/<ticket_number>/snapshots/*/cbopinfo*/ 2>/dev/null || ls $DIR_TICKETS/<ticket_number>/cbopinfo*/ 2>/dev/null
+```
+
+If `cbopinfo` exists, it is the primary source for operator-level issues (pod scheduling, reconciliation loops, auto-failover decisions, recoveryPolicy behavior). Key files inside:
+```bash
+# Operator pod log — main reconciliation and failover decisions
+find cbopinfo*/ -name "*.log" -o -name "*.txt" | sort
+
+# Search for reconciliation errors and failover decisions
+rg -iN "error|failed|unrecoverable|manual.*action|autoFailover|recoveryPolicy|PrioritizeUptime|PrioritizeDataIntegrity" cbopinfo*/
+
+# Pod eviction / node down events
+rg -iN "evicted|OOMKilled|node.*down|pod.*deleted|unschedulable|CountdownExpired" cbopinfo*/
+```
+
 **Check for ticket_files** (customer-uploaded SDK/application logs):
 ```bash
 ls $DIR_TICKETS/<ticket_number>/ticket_files/
