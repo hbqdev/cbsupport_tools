@@ -124,10 +124,18 @@ ls $DIR_TICKETS/<ticket_number>/ticket_files/
 ```
 
 If ticket_files directory contains files:
-- These are usually SDK logs, application logs, or stack traces
+- **First, extract any zip/tar archives found there:**
+  ```bash
+  cd $DIR_TICKETS/<ticket_number>/ticket_files/
+  for f in *.zip; do [ -f "$f" ] && unzip -o "$f" -d "${f%.zip}/" && echo "Extracted $f"; done
+  for f in *.tar.gz; do [ -f "$f" ] && mkdir -p "${f%.tar.gz}" && tar -xzf "$f" -C "${f%.tar.gz}/" && echo "Extracted $f"; done
+  find . -type f | sort
+  ```
+- These are usually SDK logs, application logs, stack traces, or operator logs (zip)
 - Analyze them for client-side errors (SDK timeouts, connection errors, exceptions)
 - Correlate SDK error timestamps with server-side log events
 - Look for patterns: retries, connection pool exhaustion, authentication failures
+- **For operator log zips**: look for pod eviction events, reconciliation failures, CouchbaseCluster status changes
 
 If ticket_files is empty but raw ticket shows uploaded files:
 - Note that files exist but weren't downloaded (likely AWS SSO expired)
@@ -304,11 +312,31 @@ For multi-node clusters:
 
 **B. Client-side logs (ticket_files)**
 
+**Always unzip first** — ticket_files often contain zip archives (operator logs, SDK logs). Extract before searching:
+```bash
+cd $DIR_TICKETS/<ticket_number>/ticket_files/
+for f in *.zip; do [ -f "$f" ] && unzip -o "$f" -d "${f%.zip}/" && echo "Extracted $f"; done
+for f in *.tar.gz; do [ -f "$f" ] && mkdir -p "${f%.tar.gz}" && tar -xzf "$f" -C "${f%.tar.gz}/" && echo "Extracted $f"; done
+find . -type f | sort
+```
+
 If SDK/application logs exist in ticket_files:
 ```bash
 # Search for common SDK errors
 rg -iN "timeout|exception|error|failed" ticket_files/*.txt
 rg -iN "UnAmbiguousTimeoutException|AmbiguousTimeoutException" ticket_files/*.log
+```
+
+If **operator logs** (Couchbase Autonomous Operator) exist in ticket_files (often zipped):
+```bash
+# Reconciliation errors and pod failures
+rg -iN "error|failed|unrecoverable|manual.*action|auto.failover|recoveryPolicy" ticket_files/**/*.log ticket_files/**/*.txt 2>/dev/null
+
+# Auto-failover and recovery decisions
+rg -iN "autoFailover|failover|recovery|PrioritizeUptime|PrioritizeDataIntegrity" ticket_files/**/*.log 2>/dev/null
+
+# Pod eviction / node down events
+rg -iN "evicted|OOMKilled|node.*down|pod.*deleted|unschedulable" ticket_files/**/*.log 2>/dev/null
 ```
 
 **Correlate client and server**:
