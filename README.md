@@ -67,17 +67,20 @@ The manager runs QA checks on the analyzer output, then generates `analysis_repo
 
 ```
 $DIR_TICKETS/<ticket>/
-├── ticket_<number>.raw         # Raw ticket JSON
-├── ticket_timeline.json        # Parsed timeline + prior responses
+├── ticket_<number>.raw              # Raw ticket JSON
+├── ticket_timeline.json             # Parsed timeline + prior responses
 ├── snapshots/<uuid>/
-│   └── cbcollect_info_*/       # Per-node server logs
-├── ticket_files/               # Customer-uploaded logs
-├── analysis_metadata.json      # Structured findings (from analyzer)
-└── analysis_report.md          # Complete report + customer response (from manager)
+│   └── cbcollect_info_*/            # Per-node server logs
+│   └── cbopinfo*/                   # CAO operator logs (CAO-managed clusters)
+├── ticket_files/                    # Customer-uploaded logs
+├── analysis_metadata_v1.json        # Structured findings (from analyzer)
+└── analysis_report_v1.md            # Complete report + customer response (from manager)
 ```
+
+Versioned — re-running analysis creates `v2`, `v3`, etc. without overwriting prior work.
 
 ## Documentation
 
-- **Agent definitions**: `.claude/agents/`
+- **Copilot CLI agents**: `.github/copilot/agents/`
 - **Copilot CLI agent docs**: `.github/copilot/agents/README.md`
 - **Legacy agents** (Copilot Workspace): `.factory/droids/`
