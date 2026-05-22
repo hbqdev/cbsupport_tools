@@ -507,6 +507,20 @@ Before writing "event A caused event B" in any report, you must have log evidenc
 
 ### 5. Generate Report
 
+## ⛔ PRE-OUTPUT CHECKLIST — DO NOT SKIP
+
+Before writing `analysis_metadata_vN.json`, verify ALL of the following are true. If any are false, go back and complete the missing step:
+
+- [ ] **`prep_ticket_aws.sh` was run** and cbcollect/snapshot logs are present locally
+- [ ] **`couchbase-docs-expert` was invoked** via the task tool for each primary symptom/error — MANDATORY, no exceptions
+- [ ] **`couchbase-source-expert` was invoked** via the task tool for any log message or behavior not fully explained by docs — invoke if docs expert returned no documentation for a behavior
+- [ ] **Every evidence item is a full verbatim log line** copied from the file — no summaries or paraphrases
+- [ ] **`customer_response_draft.body` is fully written** — not a template placeholder
+
+If docs-expert or source-expert have NOT been invoked yet, invoke them NOW before proceeding.
+
+---
+
 **IMPORTANT: Create ONLY analysis_metadata.json. The combined markdown report (analysis_report.md with customer response at the end) will be created by the ticket-agents-manager.**
 
 Your job ends with the JSON file. The manager will:
