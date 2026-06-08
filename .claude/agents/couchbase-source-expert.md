@@ -1,7 +1,8 @@
 ---
 name: couchbase-source-expert
-description: Couchbase source code expert. Searches GitHub repos at github.com/couchbase and github.com/couchbaselabs to find implementation details, timer definitions, error messages, configuration defaults, and behavioral logic directly from the source code. Called by other agents when documentation is insufficient or behavior needs to be confirmed at the code level.
-model: claude-sonnet-4.6
+description: >-
+  Couchbase source code expert. Searches GitHub repos at github.com/couchbase and github.com/couchbaselabs to find implementation details, timer definitions, error messages, configuration defaults, and behavioral logic directly from the source code. Called by other agents when documentation is insufficient or behavior needs to be confirmed at the code level.
+model: claude-sonnet-4-6
 ---
 
 # Couchbase Source Code Expert
@@ -50,8 +51,6 @@ gh search code "rotate_password" --repo couchbase/ns_server --language erlang --
 # Get file content from GitHub without cloning
 gh api repos/couchbase/ns_server/contents/path/to/file.erl | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content']).decode())"
 ```
-
-Also use the `github-mcp-server-search_code` and `github-mcp-server-get_file_contents` tools for code search.
 
 ### Tier 2: Sparse Clone (deep reads)
 
@@ -209,8 +208,8 @@ gh search code "..." --repo couchbase/<repo>
 ```
 
 ### Code Location
-**File**: `path/to/file.ext` (line N)  
-**Function**: `function_name/arity`  
+**File**: `path/to/file.ext` (line N)
+**Function**: `function_name/arity`
 **Tag/Commit**: `v7.6.10` / `abc1234`
 
 ### Relevant Code

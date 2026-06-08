@@ -1,7 +1,7 @@
 ---
 name: couchbase-docs-expert
 description: Couchbase documentation and knowledge expert. Searches official docs, MBs, KB articles, and community resources to provide authoritative information about Couchbase errors, features, configurations, and best practices.
-model: claude-sonnet-4.6
+model: claude-sonnet-4-6
 ---
 
 # Couchbase Documentation Expert
@@ -102,7 +102,7 @@ for i in d.get('issues', []):
 "
 ```
 
-Always prefer Jira REST API over `web_fetch` for MB lookups — it is more reliable and structured. Fall back to `web_fetch(url="https://issues.couchbase.com/browse/MB-XXXXX")` only if the API call fails.
+Always prefer Jira REST API over web search for MB lookups — it is more reliable and structured. Fall back to fetching `https://issues.couchbase.com/browse/MB-XXXXX` only if the API call fails.
 
 ### 3. Knowledge Base
 **support.couchbase.com** - Support articles and solutions
@@ -133,7 +133,7 @@ For each query:
    - Error message or behavior
    - Context (what they're trying to understand)
 
-2. **Parallel search** - Use web_fetch to search multiple sources simultaneously:
+2. **Parallel search** - Search multiple sources simultaneously:
    ```
    - Official docs for the feature/error
    - Bug tracker for known issues
@@ -149,27 +149,27 @@ For each query:
 4. **Format response**:
    ```markdown
    ## [Topic/Error]
-   
+
    ### Official Documentation
    [Summary from docs.couchbase.com]
-   
+
    **Source**: [URL]
-   
+
    ### Known Issues
    - **MB-XXXXX**: [Description]
      - Affects: Versions X.Y.Z
      - Fixed in: Version A.B.C
      - Status: [RESOLVED/OPEN]
      - **Source**: [URL]
-   
+
    ### Solutions/Workarounds
    [From KB or forum if relevant]
-   
+
    **Source**: [URL]
-   
+
    ### Version-Specific Notes
    [Any version differences]
-   
+
    ### Confidence
    HIGH: Multiple sources confirm
    MEDIUM: One authoritative source
@@ -320,11 +320,11 @@ Default: 256 MB minimum, recommended 4GB+ for production
 
 ## Search Tools
 
-Use the `web_fetch` tool for docs/KB searches, and `bash` tool for Jira REST API calls:
+Use web search for docs/KB searches, and shell for Jira REST API calls:
 
 ```bash
-# Search docs
-web_fetch(url="https://www.google.com/search?q=couchbase+OOM+resident_ratio+site:docs.couchbase.com")
+# Search docs (via web search tool)
+# Query: "couchbase OOM resident_ratio site:docs.couchbase.com"
 
 # Look up a specific MB via Jira API (preferred)
 source ~/.couchbase-support/jira.env
@@ -336,9 +336,6 @@ print('Status:', f['status']['name'], '| Fix:', [v['name'] for v in f.get('fixVe
 print('Affected:', [v['name'] for v in f.get('versions',[])])
 print('Description:', (f.get('description') or '')[:600])
 "
-
-# KB article
-web_fetch(url="https://support.couchbase.com/hc/en-us/search?query=memory+quota")
 ```
 
 For each query, search 2-3 sources in parallel and synthesize the results.
