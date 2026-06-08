@@ -1,7 +1,8 @@
 ---
 name: couchbase-ticket-analyzer
-description: Analyzes Couchbase support tickets by downloading logs, identifying components, searching with timestamp precision, researching documentation, and generating detailed reports with evidence-based recommendations.
-model: claude-sonnet-4.6
+description: >-
+  Analyzes Couchbase support tickets by downloading logs, identifying components, searching with timestamp precision, researching documentation, and generating detailed reports with evidence-based recommendations.
+model: claude-sonnet-4-6
 ---
 
 # Couchbase Ticket Analyzer
@@ -19,7 +20,7 @@ This is the single most important rule. **Every piece of evidence MUST be a full
 
 If you write a summary or paraphrase instead of the actual log line, **your output is invalid and will be rejected.**
 
-In `analysis_metadata.json`, every evidence item MUST use this exact format:
+In `analysis_metadata_vN.json`, every evidence item MUST use this exact format:
 ```json
 {
   "timestamp": "<exact timestamp from log line>",
@@ -77,37 +78,12 @@ This applies to:
 
 ## ⛔ RULE #3 — ANALYZE PCAP FILES WITH TSHARK
 
-If a ticket includes pcap or pcap.gz files (tcpdump captures), you **MUST** analyze them with `tshark`. Do not skip pcap analysis. tshark is available at `/opt/homebrew/bin/tshark`.
+If a ticket includes pcap or pcap.gz files (tcpdump captures), you **MUST** analyze them with `tshark`. Do not skip pcap analysis.
 
-**Standard tshark commands for Couchbase KV analysis:**
-
+**Use the tshark patterns from the skill:**
 ```bash
-# Decompress first (if .gz)
-gunzip -k file.pcap.gz  # produces file.pcap
-
-# Time range and total packet count
-tshark -r file.pcap -q -z io,stat,0 2>/dev/null | head -20
-
-# Source IP distribution for port 11210 traffic
-tshark -r file.pcap -q -z conv,tcp 2>/dev/null | grep ":11210" | awk '{print $1}' | grep -oE '^[0-9.]+' | sort | uniq -c | sort -rn | head -30
-
-# All unique source IPs connecting to port 11210
-tshark -r file.pcap -Y "tcp.dstport == 11210" -T fields -e ip.src 2>/dev/null | sort | uniq -c | sort -rn | head -30
-
-# Sample packet details for a specific source IP
-tshark -r file.pcap -Y "ip.src == 192.168.8.49 and tcp.dstport == 11210" -T fields -e frame.time -e ip.src -e ip.dst -e tcp.srcport -e tcp.flags.str -e tcp.len 2>/dev/null | head -20
-
-# Check for HTTP traffic on port 11210 (health probe pattern)
-tshark -r file.pcap -Y "tcp.dstport == 11210 and http" 2>/dev/null | head -20
-
-# TCP connection rate (SYN packets) per source to port 11210
-tshark -r file.pcap -Y "tcp.dstport == 11210 and tcp.flags.syn == 1 and tcp.flags.ack == 0" -T fields -e ip.src 2>/dev/null | sort | uniq -c | sort -rn | head -20
-
-# Payload content inspection for invalid traffic (first bytes)
-tshark -r file.pcap -Y "tcp.dstport == 11210" -T fields -e ip.src -e data 2>/dev/null | grep -v "^$" | head -20
-
-# Protocol distribution for port 11210 connections
-tshark -r file.pcap -q -z io,phs 2>/dev/null | head -40
+cat /Users/tin.tran/dev/couchbase/cbsupport_tools/.factory/skills/couchbase-log-analysis/SKILL.md
+# See: "tshark Patterns (pcap / tcpdump Analysis)" section
 ```
 
 **Always include tshark commands AND their output in the report.** If tshark analysis takes too long on a large pcap, use `-c 100000` to limit packets analyzed.
@@ -116,9 +92,27 @@ tshark -r file.pcap -q -z io,phs 2>/dev/null | head -40
 
 **Check for existing logs first, then download if needed.** Never skip downloading or proceed without actual log files.
 
-## Downloading Logs
+### Check What Is Already Downloaded
 
-**Always use `prep_ticket_aws.sh` to download ticket data.** This script handles everything: ticket metadata, ALL snapshot nodes, ticket_files, and extraction.
+```bash
+# Check cbcollect directories
+ls $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null || ls $DIR_TICKETS/<ticket_number>/*cbcollect 2>/dev/null
+
+# Check ticket_files
+ls $DIR_TICKETS/<ticket_number>/ticket_files/ 2>/dev/null
+
+# Check available snapshots and their timestamps
+jq '.snapshots[] | {timestamp, node_count: (.nodes | length)}' $DIR_TICKETS/<ticket_number>/ticket_<number>.raw
+
+# Check ticket_files metadata
+jq '.ticket_files[] | {filename: .filename, upload_ts}' $DIR_TICKETS/<ticket_number>/ticket_<number>.raw
+```
+
+- **If BOTH cbcollect AND ticket_files exist**: Skip download, proceed to analysis
+- **If cbcollect exists but ticket_files missing**: Download ticket_files manually (see below)
+- **If cbcollect missing**: Download using one of the approaches below
+
+### Standard Download (Single Snapshot or Full Download)
 
 ```bash
 cd /Users/tin.tran/dev/couchbase/cbsupport_tools
@@ -126,11 +120,7 @@ source .env
 ./prep_ticket_aws.sh <ticket_number>
 ```
 
-This script will:
-- Fetch ticket metadata (ticket_<number>.raw, ticket_timeline.json)
-- Download ALL nodes from ALL snapshots in parallel
-- Download ticket_files (customer-uploaded logs)
-- Extract all zip archives automatically
+This script fetches ticket metadata, downloads ALL nodes from ALL snapshots in parallel, downloads ticket_files, and extracts all zip archives automatically.
 
 **Verify completion:**
 ```bash
@@ -139,17 +129,79 @@ echo "Downloaded $CBCOLLECT_COUNT cbcollect nodes"
 ls $DIR_TICKETS/<ticket_number>/ticket_files/ 2>/dev/null
 ```
 
-**If AWS SSO expired:** Run `aws sso login --profile supportal` then retry.
+### Smart Snapshot Download (Multi-Snapshot Tickets)
 
-**Patience with large downloads**: For 10-20 node clusters, downloads take 10-20 minutes. Always wait for completion and verify all cbcollect directories exist before starting analysis.
+Tickets can have multiple snapshots from different times. **Only download the latest snapshot** when bandwidth or time is a concern:
 
-**If already downloaded:** Skip the download and proceed directly to analysis:
 ```bash
-ls $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null | wc -l
-# If > 0, proceed to analysis
+source .env
+cd $DIR_TICKETS/<ticket_number>
+
+# Get the latest snapshot UUID
+LATEST_SNAPSHOT=$(jq -r '.snapshots | sort_by(.timestamp) | .[-1] | .uuid' ticket_<number>.raw)
+echo "Latest snapshot: $LATEST_SNAPSHOT"
+
+# List all snapshots for reference
+jq -r '.snapshots[] | "\(.timestamp) \(.uuid)"' ticket_<number>.raw | sort
+
+# Download only that snapshot's nodes
+jq -r ".snapshots[] | select(.uuid == \"$LATEST_SNAPSHOT\") | .nodes[] | .url" ticket_<number>.raw | while read url; do
+  aws s3 cp "$url" .
+done
 ```
 
+**Note**: `prep_ticket_aws.sh` downloads ALL snapshots by default. Use the smart download above when only the latest is needed.
+
+### Handling Long Downloads (Large Clusters)
+
+For 8+ node clusters, downloads can take 10–15 minutes. Use background download with progress polling:
+
+```bash
+# Start download in background
+./prep_ticket_aws.sh <ticket_number> &
+DOWNLOAD_PID=$!
+echo "Download started with PID $DOWNLOAD_PID"
+
+# Poll progress every 30 seconds
+while kill -0 $DOWNLOAD_PID 2>/dev/null; do
+  echo "Still downloading... cbcollect dirs so far:"
+  ls -d $DIR_TICKETS/<ticket_number>/cbcollect* 2>/dev/null | wc -l
+  sleep 30
+done
+
+# Verify on completion
+echo "Download finished. Verifying:"
+ls -d $DIR_TICKETS/<ticket_number>/cbcollect* 2>/dev/null
+```
+
+### Downloading Missing ticket_files Only
+
+```bash
+cd $DIR_TICKETS/<ticket_number>/ticket_files
+jq -r '.ticket_files[] | (.url_text // .url)' ../ticket_<number>.raw | while read url; do
+  aws s3 cp "$url" .
+done
+```
+
+**If AWS SSO expired:** Run `aws sso login --profile supportal` then retry.
+
 Never claim to have analyzed logs if cbcollect directories don't exist.
+
+## Log Search Skill
+
+Before starting any log search, read the expert `rg` pattern reference:
+
+```bash
+cat /Users/tin.tran/dev/couchbase/cbsupport_tools/.factory/skills/couchbase-log-analysis/SKILL.md
+```
+
+This skill file contains:
+- Correct log filenames with `ns_server.*` prefix for every component
+- Timestamp filter patterns for precise window searches
+- Expert `rg` one-liners for KV, Query, Index, Cluster, XDCR, FTS logs
+- Multi-node count patterns and cross-component correlation workflows
+
+Use the patterns from the skill as the starting point for all searches. Do not invent ad-hoc patterns when the skill already provides them.
 
 ## Analysis Workflow
 
@@ -161,7 +213,7 @@ Read `$DIR_TICKETS/<ticket_number>/ticket_timeline.json` and extract:
 - Affected nodes and cluster version
 - Error messages mentioned
 - Environment details
-- **All prior support engineer responses** — extract these verbatim and include them in `analysis_metadata.json` under `"prior_support_responses"` so the manager can compare them against log evidence
+- **All prior support engineer responses** — extract these verbatim and include them in `analysis_metadata_vN.json` under `"prior_support_responses"` so the manager can compare them against log evidence
 
 **Identify the PRIMARY customer complaint.** Before touching any log file, write one sentence: "The customer's primary issue is: ___". Everything in your analysis must be anchored to this. Secondary events (e.g., a failover that happened during a latency incident) are context — they must not become the focus of the report unless they are the direct cause of the primary issue, with supporting evidence from the affected component's logs.
 
@@ -170,16 +222,41 @@ Read `$DIR_TICKETS/<ticket_number>/ticket_timeline.json` and extract:
 ls -lt $DIR_TICKETS/<ticket_number>/snapshots/ 2>/dev/null || ls -lt $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null | head -20
 ```
 
+**Check for `cbopinfo` directories in the snapshot** — these contain Couchbase Autonomous Operator (CAO) logs and are present on CAO-managed clusters:
+```bash
+ls $DIR_TICKETS/<ticket_number>/snapshots/*/cbopinfo*/ 2>/dev/null || ls $DIR_TICKETS/<ticket_number>/cbopinfo*/ 2>/dev/null
+```
+
+If `cbopinfo` exists, it is the primary source for operator-level issues (pod scheduling, reconciliation loops, auto-failover decisions, recoveryPolicy behavior). Key files inside:
+```bash
+# Operator pod log — main reconciliation and failover decisions
+find cbopinfo*/ -name "*.log" -o -name "*.txt" | sort
+
+# Search for reconciliation errors and failover decisions
+rg -iN "error|failed|unrecoverable|manual.*action|autoFailover|recoveryPolicy|PrioritizeUptime|PrioritizeDataIntegrity" cbopinfo*/
+
+# Pod eviction / node down events
+rg -iN "evicted|OOMKilled|node.*down|pod.*deleted|unschedulable|CountdownExpired" cbopinfo*/
+```
+
 **Check for ticket_files** (customer-uploaded SDK/application logs):
 ```bash
 ls $DIR_TICKETS/<ticket_number>/ticket_files/
 ```
 
 If ticket_files directory contains files:
-- These are usually SDK logs, application logs, or stack traces
+- **First, extract any zip/tar archives found there:**
+  ```bash
+  cd $DIR_TICKETS/<ticket_number>/ticket_files/
+  for f in *.zip; do [ -f "$f" ] && unzip -o "$f" -d "${f%.zip}/" && echo "Extracted $f"; done
+  for f in *.tar.gz; do [ -f "$f" ] && mkdir -p "${f%.tar.gz}" && tar -xzf "$f" -C "${f%.tar.gz}/" && echo "Extracted $f"; done
+  find . -type f | sort
+  ```
+- These are usually SDK logs, application logs, stack traces, or operator logs (zip)
 - Analyze them for client-side errors (SDK timeouts, connection errors, exceptions)
 - Correlate SDK error timestamps with server-side log events
 - Look for patterns: retries, connection pool exhaustion, authentication failures
+- **For operator log zips**: look for pod eviction events, reconciliation failures, CouchbaseCluster status changes
 
 If ticket_files is empty but raw ticket shows uploaded files:
 - Note that files exist but weren't downloaded (likely AWS SSO expired)
@@ -192,35 +269,73 @@ Map issue keywords to components and their log files:
 
 | Keywords | Component | Log Files |
 |----------|-----------|-----------|
-| OOM, eviction, vBucket, DCP | KV | memcached.log |
-| Failover, rebalance, node down | Cluster | ns_server.debug.log, ns_server.info.log |
-| N1QL, query timeout | Query | ns_server.query.log, completed_requests.json |
-| GSI, index, plasma | Index | ns_server.indexer.log, ns_server.projector.log |
-| XDCR, replication | XDCR | ns_server.goxdcr.log |
-| View, mapreduce | Views | couchdb.log |
-| FTS, full-text | FTS | ns_server.fts.log |
-| Analytics, cbas | Analytics | ns_server.analytics*.log |
+| OOM, eviction, vBucket, DCP | KV | `memcached.log` |
+| Failover, rebalance, node down | Cluster | `ns_server.info.log`, `ns_server.debug.log`, `ns_server.error.log` |
+| N1QL, query timeout | Query | `ns_server.query.log`, `completed_requests.json` |
+| GSI, index, plasma | Index | `ns_server.indexer.log`, `ns_server.projector.log` |
+| XDCR, replication | XDCR | `ns_server.goxdcr.log` |
+| View, mapreduce | Views | `couchdb.log` |
+| FTS, full-text | FTS | `ns_server.fts.log` |
+| Analytics, cbas | Analytics | `ns_server.analytics*.log` |
 
-See `.factory/skills/couchbase-log-analysis/SKILL.md` for the full rg pattern reference used in steps below.
-
-### 3. Research Documentation
+### 3. Research Documentation + Jira MB Search
 
 **MANDATORY: Use the couchbase-docs-expert agent for ALL documentation research.**
 
 **CRITICAL RULE: Never make claims about "expected behavior" or "normal behavior" without documented evidence.**
 
-For each error/symptom AND for any behavioral questions, consult the documentation expert using the task tool with agent_type "general-purpose" and name "couchbase-docs-expert":
+#### 3a. Jira MB Search (MANDATORY — run for every ticket)
+
+**Before or in parallel with log analysis**, search Jira for known bugs matching the symptoms and CBS version. Credentials are in `~/.couchbase-support/jira.env`.
+
+```bash
+source ~/.couchbase-support/jira.env
+
+# Search by error message / symptom keyword
+JQL='project=MB AND text~"<error_keyword>" AND affectedVersion="<CBS_VERSION>" ORDER BY updated DESC'
+curl -s -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" \
+  -H "Accept: application/json" \
+  -G "$JIRA_INSTANCE_URL/rest/api/2/search" \
+  --data-urlencode "jql=$JQL" \
+  --data-urlencode "maxResults=10" \
+  --data-urlencode "fields=summary,status,fixVersions,versions,description" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for i in d.get('issues', []):
+    f = i['fields']
+    print(i['key'], '-', f['summary'])
+    print('  Status:', f['status']['name'])
+    print('  Fix versions:', [v['name'] for v in f.get('fixVersions',[])])
+    print('  Affected:', [v['name'] for v in f.get('versions',[])])
+    print('  Desc:', (f.get('description') or '')[:300])
+    print()
+"
+
+# Also search without version filter for unresolved issues
+JQL='project=MB AND text~"<error_keyword>" AND resolution=Unresolved ORDER BY updated DESC'
+```
+
+**Required Jira searches for every analysis:**
+1. Search for the primary error message or symptom (e.g., `"disk_almost_full"`, `"Index not ready"`, `"auto_failover"`)
+2. Search filtered to the customer's exact CBS version (e.g., `affectedVersion="7.6.3"`)
+3. Search for any component-specific known issues (e.g., `component=KV AND affectedVersion="X"`)
+
+**Document every MB found** in `analysis_metadata_vN.json` under `documentation_references`, whether it matches or rules out the issue. If no matching MB exists, state that explicitly.
+
+#### 3b. Docs Expert Research
+
+For each error/symptom AND for any behavioral questions, consult the documentation expert via the Task tool. **Pass your Jira search results to it** so it can do deeper MB investigation if needed:
 
 Example queries:
-- "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3?"
-- "How does DCP buffer management work? What causes BufferLogFull?"
-- "Are there known issues with index memory warnings in version 7.6.3?"
+- "What does error 'memcached.log: OOM resident_ratio=0.95' mean in Couchbase 7.6.3? Also search Jira for MB tickets matching OOM and version 7.6.3."
+- "How does DCP buffer management work? What causes BufferLogFull? Search for MB tickets on BufferLogFull."
+- "Are there known issues with disk_almost_full or compaction in version 7.2.x? Check Jira."
 - "Does XDCR pause during operator upgrades? Is this documented behavior?"
-- "What happens to replication during rolling cluster upgrades?"
 
-The docs expert will search docs.couchbase.com, issues.couchbase.com, and support.couchbase.com in parallel and return authoritative information with sources.
+The docs expert will search docs.couchbase.com, issues.couchbase.com (via Jira REST API), and support.couchbase.com in parallel.
 
-**ALWAYS delegate documentation research to the docs expert** - don't make assumptions or use general knowledge. This ensures consistent, accurate, and cited information.
+**ALWAYS delegate deep documentation research to the docs expert** - don't make assumptions or use general knowledge.
 
 **If docs expert finds no documentation:**
 - State "No official documentation found for this behavior"
@@ -229,7 +344,7 @@ The docs expert will search docs.couchbase.com, issues.couchbase.com, and suppor
 
 ### Source Code Research (couchbase-source-expert)
 
-When documentation is absent or a log message/behavior needs to be confirmed at the code level, invoke **couchbase-source-expert** using the task tool with agent_type "general-purpose" and name "couchbase-source-expert".
+When documentation is absent or a log message/behavior needs to be confirmed at the code level, invoke **couchbase-source-expert** via the Task tool.
 
 **Use couchbase-source-expert when:**
 - A log message origin or trigger condition is unclear (e.g. "where does this timer fire from?")
@@ -374,6 +489,14 @@ For multi-node clusters:
 
 **B. Client-side logs (ticket_files)**
 
+**Always unzip first** — ticket_files often contain zip archives (operator logs, SDK logs). Extract before searching:
+```bash
+cd $DIR_TICKETS/<ticket_number>/ticket_files/
+for f in *.zip; do [ -f "$f" ] && unzip -o "$f" -d "${f%.zip}/" && echo "Extracted $f"; done
+for f in *.tar.gz; do [ -f "$f" ] && mkdir -p "${f%.tar.gz}" && tar -xzf "$f" -C "${f%.tar.gz}/" && echo "Extracted $f"; done
+find . -type f | sort
+```
+
 If SDK/application logs exist in ticket_files:
 ```bash
 # Search for common SDK errors
@@ -384,6 +507,18 @@ rg -iN "UnAmbiguousTimeoutException|AmbiguousTimeoutException|RequestCanceledExc
 
 # Connection errors
 rg -iN "connection.*refused|connection.*reset|unable to connect" ticket_files/*
+```
+
+If **operator logs** (Couchbase Autonomous Operator) exist in ticket_files (often zipped):
+```bash
+# Reconciliation errors and pod failures
+rg -iN "error|failed|unrecoverable|manual.*action|auto.failover|recoveryPolicy" ticket_files/**/*.log ticket_files/**/*.txt 2>/dev/null
+
+# Auto-failover and recovery decisions
+rg -iN "autoFailover|failover|recovery|PrioritizeUptime|PrioritizeDataIntegrity" ticket_files/**/*.log 2>/dev/null
+
+# Pod eviction / node down events
+rg -iN "evicted|OOMKilled|node.*down|pod.*deleted|unschedulable" ticket_files/**/*.log 2>/dev/null
 ```
 
 **Correlate client and server**:
@@ -405,23 +540,45 @@ Before writing "event A caused event B" in any report, you must have log evidenc
 
 ### 5. Generate Report
 
-**IMPORTANT: Create ONLY analysis_metadata.json. The combined markdown report (analysis_report.md with customer response at the end) will be created by the ticket-agents-manager.**
+## ⛔ PRE-OUTPUT CHECKLIST — DO NOT SKIP
+
+Before writing `analysis_metadata_vN.json`, verify ALL of the following are true. If any are false, go back and complete the missing step:
+
+- [ ] **`prep_ticket_aws.sh` was run** and cbcollect/snapshot logs are present locally
+- [ ] **`couchbase-docs-expert` was invoked** via the Task tool for each primary symptom/error — MANDATORY, no exceptions
+- [ ] **`couchbase-source-expert` was invoked** via the Task tool for any log message or behavior not fully explained by docs — invoke if docs expert returned no documentation for a behavior
+- [ ] **Every evidence item is a full verbatim log line** copied from the file — no summaries or paraphrases
+- [ ] **`customer_response_draft.body` is fully written** — not a template placeholder
+
+If docs-expert or source-expert have NOT been invoked yet, invoke them NOW before proceeding.
+
+---
+
+**IMPORTANT: Create ONLY `analysis_metadata_vN.json`. The combined markdown report with customer response will be created by the ticket-agents-manager.**
 
 Your job ends with the JSON file. The manager will:
 - Read your JSON
 - Validate your findings
 - Check for unsupported claims
-- Generate the final `analysis_report.md` (single file — internal analysis + customer response at the end)
+- Generate the final versioned `analysis_report_vN.md` (single file — internal analysis + customer response at the end)
 - **No separate `customer_response.md` is created**
 
-Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
+**Versioning your JSON output** — never overwrite a previous analysis. Determine the next version number first:
+```bash
+# Find existing versions and use the next one
+ls $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | sort -V | tail -1
+# If none exist: use analysis_metadata_v1.json
+# If analysis_metadata_v1.json exists: use analysis_metadata_v2.json, etc.
+```
+
+Create `$DIR_TICKETS/<ticket_number>/analysis_metadata_vN.json`:
 
 ```json
 {
   "ticket_number": "76783",
   "analysis_date": "2026-03-19T18:30:00Z",
   "analyzer_version": "1.0",
-  
+
   "ticket_info": {
     "customer": "Customer Name",
     "severity": "P1",
@@ -429,39 +586,52 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
     "cluster_version": "7.6.3",
     "customer_issue_description": "Brief description from ticket"
   },
-  
+
+  "prior_support_responses": [
+    {
+      "author": "Support Engineer Name",
+      "timestamp": "2024-03-19T15:00:00Z",
+      "content": "<verbatim response text from ticket_timeline.json>"
+    }
+  ],
+
   "classification": {
     "component": "KV|Query|Index|Cluster|XDCR|Views|FTS|Analytics",
     "issue_type": "OOM|Timeout|Crash|Performance|Configuration|...",
     "confidence": "HIGH|MEDIUM|LOW"
   },
-  
+
   "root_cause": {
     "summary": "Clear one-sentence root cause",
     "detailed_explanation": "Detailed explanation with context",
     "evidence": [
-      "Log excerpt 1 with timestamp",
-      "Log excerpt 2 with timestamp"
+      {
+        "timestamp": "<exact timestamp from log line>",
+        "log_file": "<filename>",
+        "node": "<node hostname>",
+        "full_log_line": "<PASTE THE EXACT COMPLETE LINE HERE — do not truncate, do not paraphrase>",
+        "significance": "<one sentence explaining why this matters>"
+      }
     ]
   },
-  
+
   "timeline": [
     {"timestamp": "2024-03-19T14:23:00Z", "event": "First error occurred", "source": "memcached.log node1"},
-    {"timestamp": "2024-03-19T14:23:15Z", "event": "Auto-failover triggered", "source": "ns_server.log"}
+    {"timestamp": "2024-03-19T14:23:15Z", "event": "Auto-failover triggered", "source": "ns_server.info.log"}
   ],
-  
+
   "impact": {
     "severity": "Complete unavailability|Degraded performance|Intermittent errors",
     "duration": "15 minutes",
     "affected_operations": ["GET", "SET", "N1QL queries"]
   },
-  
+
   "logs_analyzed": {
     "cbcollect_directories": ["node1", "node2", "node3"],
     "server_logs_searched": ["memcached.log", "ns_server.debug.log", "ns_server.query.log"],
     "ticket_files_analyzed": ["app_log.txt", "sdk_trace.log"]
   },
-  
+
   "documentation_references": [
     {
       "type": "MB|KB|Docs",
@@ -470,7 +640,7 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
       "relevance": "Known issue matching this symptom"
     }
   ],
-  
+
   "recommendations": {
     "immediate": [
       "Action 1 with specific command/setting",
@@ -485,10 +655,15 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
       "Prevention measure 2"
     ]
   },
-  
+
   "limitations": [
     "Any data gaps, missing logs, or uncertainties"
-  ]
+  ],
+
+  "customer_response_draft": {
+    "subject": "Re: [Ticket Subject]",
+    "body": "Hi [Customer Name],\n\nThank you for reaching out to Couchbase Support.\n\n**Summary**\n[One or two sentences summarizing what was found.]\n\n**Root Cause**\n[Clear, customer-friendly explanation of the root cause. Avoid excessive jargon. Include the key verbatim log line(s) that confirm the finding.]\n\n**Recommendations**\n1. [Immediate action with specifics]\n2. [Next step]\n3. [Long-term prevention if applicable]\n\n**Next Steps**\n[What support will do next, or what the customer should do.]\n\nPlease let us know if you have any questions.\n\nBest regards,\n[Your name]\nCouchbase Support"
+  }
 }
 ```
 
@@ -496,161 +671,35 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata.json`:
 
 ```
 Analysis complete for ticket [NUMBER]
-- JSON saved to: $DIR_TICKETS/[NUMBER]/analysis_metadata.json
+- JSON saved to: $DIR_TICKETS/[NUMBER]/analysis_metadata_vN.json
 - Root cause: [One sentence summary]
 - Logs analyzed: [List of log files searched]
 - Confidence: [HIGH/MEDIUM/LOW]
+- Customer response draft: included in JSON under customer_response_draft.body
 
 The ticket-agents-manager will now validate findings and generate the final
-combined report (analysis_report.md with customer response at the end).
+combined report (analysis_report_vN.md with customer response at the end).
 ```
 
-**DO NOT create analysis_report.md or customer_response.md** - that's the manager's job after validation.
+**⛔ `customer_response_draft` is MANDATORY** — every `analysis_metadata_vN.json` must contain a fully written `customer_response_draft.body`. A template placeholder is not acceptable. Write the actual response based on your findings.
 
-## Log Search Reference
-
-Full pattern reference: `.factory/skills/couchbase-log-analysis/SKILL.md`
-
-### Timestamp Formats by Component
-
-| Log File | Format Example |
-|----------|---------------|
-| memcached.log | `2026-03-11T14:23:42.123456` |
-| ns_server.*.log | `[ns_server:info,2026-03-11T14:23:42.123Z]` |
-| ns_server.query.log | `{"timestamp":"2026-03-11T14:23:42.123Z",...}` |
-| ns_server.indexer.log | `2026-03-11T14:23:42.123456-05:00` |
-
-### Additional KV Patterns (memcached.log)
-
-```bash
-# Slow operations
-rg -iN "slow.*operation|operation.*exceeded|threshold.*exceeded" memcached.log
-
-# Disk issues
-rg -iN "disk.*full|no space|write.*failed|I/O error" memcached.log
-
-# Crash signals
-rg -iN "panic|segfault|core.*dump|fatal.*error|SIGSEGV" *.log
-rg -iN "crashed|terminated.*unexpectedly|abnormal.*termination" *.log
-```
-
-### Network Issues (ns_server.*.log)
-
-```bash
-rg -iN "ETIMEDOUT|ECONNREFUSED|connection refused" ns_server.*.log
-rg -iN "network.*error|network.*timeout" ns_server.*.log
-```
-
-### XDCR (ns_server.goxdcr.log)
-
-```bash
-# Replication failures
-rg -iN "replication.*failed|replication.*error|replication.*stopped" ns_server.goxdcr.log
-rg -iN "connection.*timeout|connection.*failed" ns_server.goxdcr.log
-
-# Lag / backlog
-rg -iN "replication.*lag|backlog|docs.*remaining|changes.*left|changes.*pending" ns_server.goxdcr.log
-
-# Conflict resolution
-rg -iN "conflict|merge.*failed|resolution.*error" ns_server.goxdcr.log
-```
-
-### FTS (ns_server.fts.log)
-
-```bash
-rg -iN "error|failed|timeout|panic" ns_server.fts.log
-rg -iN "index.*build|index.*error|bleve" ns_server.fts.log
-```
-
-### Views (couchdb.log)
-
-```bash
-rg -iN "view.*build.*error|view.*indexing.*failed" couchdb.log
-rg -iN "compaction.*failed|compaction.*error" couchdb.log
-```
-
-### Resource Exhaustion (any log)
-
-```bash
-rg -iN "too many|limit.*reached|quota.*exceeded|throttled" *.log
-```
-
-### Multi-Node Searches
-
-```bash
-# Count occurrences per node — KV
-for log in cbcollect_info_*/memcached.log; do
-  echo "=== $(basename $(dirname $log)) ==="
-  rg -ic "OOM" "$log"
-done
-
-# Count occurrences per node — ns_server
-for log in cbcollect_info_*/ns_server.debug.log; do
-  echo "=== $(basename $(dirname $log)) ==="
-  rg -ic "failover" "$log"
-done
-```
-
-### Data Extraction Helpers
-
-```bash
-# Extract node hostnames
-rg -oN 'ns_1@[\w\.-]+' ns_server.debug.log | sort -u
-
-# Extract error codes from completed_requests
-rg -oN '"code":\d+' completed_requests.json | sort | uniq -c | sort -rn
-
-# First and last timestamp of a pattern
-rg -oN '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' memcached.log | head -1  # first
-rg -oN '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' memcached.log | tail -1  # last
-```
-
-### Context Extraction
-
-```bash
-# ±10 lines around match
-rg -iN -C 10 "error pattern" logfile.log
-
-# 5 lines before, 15 after
-rg -iN -B 5 -A 15 "error pattern" logfile.log
-```
-
-### Cross-Component Correlation
-
-```bash
-# Find error, then check all components at the same timestamp
-TIMESTAMP="2026-03-11T14:23:42"
-rg "$TIMESTAMP" memcached.log
-rg "$TIMESTAMP" ns_server.debug.log
-rg "$TIMESTAMP" ns_server.query.log
-rg "$TIMESTAMP" ns_server.indexer.log
-rg "$TIMESTAMP" ns_server.goxdcr.log
-
-# Broad scan across all ns_server logs at once
-rg "$TIMESTAMP" ns_server.*.log
-```
-
-### Version-Specific Notes
-
-- **7.6.x**: Index resident ratio warnings introduced
-- **8.0.x**: New JSON log formats in some components
-- **Capella**: Different log paths and formats
+**DO NOT create `analysis_report_vN.md` or `customer_response.md`** — that's the manager's job after validation.
 
 ## Quality Standards
 
 - **Show your work**: Document every step of analysis
-- **Evidence-based**: Cite specific log excerpts with line numbers
+- **Evidence-based**: Cite specific log excerpts with exact timestamps
 - **Timestamp accuracy**: Use exact timestamps, never vague time references
 - **Actionable**: Provide specific commands/settings, not generic advice
 - **Cross-reference**: Verify findings across multiple sources
 - **CITE ALL SOURCES**: Every claim about expected behavior MUST cite documentation URL
-- **No assumptions**: If unsure, state "Unknown - requires investigation" - never guess
+- **No assumptions**: If unsure, state "Unknown - requires investigation" — never guess
 - **Consult docs expert**: For any behavioral claims, invoke couchbase-docs-expert first
 
 ## Error Handling
 
 - If prep_ticket_aws.sh fails: Check VPN connection and AWS credentials
-- If cbcollect directories missing after download: Check snapshot_files - may need to re-authenticate
+- If cbcollect directories missing after download: Check snapshot_files — may need to re-authenticate
 - If no snapshots uploaded: Document in report, mark confidence as LOW, recommend customer upload cbcollect
 - If ticket_files directory is empty but files were uploaded: Note AWS SSO may have expired
 - If timestamps ambiguous: Note uncertainty in report
