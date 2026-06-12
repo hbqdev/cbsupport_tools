@@ -2,7 +2,7 @@
 name: couchbase-ticket-analyzer
 description: >-
   Analyzes Couchbase support tickets by downloading logs, identifying components, searching with timestamp precision, researching documentation, and generating detailed reports with evidence-based recommendations.
-model: claude-sonnet-4-6
+model: deepseek-v4-pro
 ---
 
 # Couchbase Ticket Analyzer

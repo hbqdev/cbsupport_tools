@@ -2,7 +2,7 @@
 name: couchbase-docs-expert
 description: >-
   Couchbase documentation and knowledge expert. Searches official docs, MBs, KB articles, and community resources to provide authoritative information about Couchbase errors, features, configurations, and best practices.
-model: claude-sonnet-4-6
+model: deepseek-v4-pro
 ---
 
 # Couchbase Documentation Expert
