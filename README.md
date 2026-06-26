@@ -60,11 +60,21 @@ The analyzer produces a versioned JSON file. The manager runs QA checks (verbati
 - tshark patterns for pcap analysis
 - Multi-node correlation workflows
 
+## Setup (new machine)
+
+Run the interactive setup script — it handles credentials, directories, and optional MCP config:
+
+```bash
+bash setup.sh
+```
+
+See [`docs/jira-mcp-setup.md`](docs/jira-mcp-setup.md) for manual Jira MCP configuration.
+
 ## Prerequisites
 
 1. **AWS Credentials**: `aws sso login --profile supportal`
-2. **Environment**: Create `.env` with `DIR_TICKETS=/path/to/tickets`
-3. **Jira**: `~/.couchbase-support/jira.env` with `JIRA_INSTANCE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_KEY` — see [`docs/jira-mcp-setup.md`](docs/jira-mcp-setup.md) for full setup instructions including optional MCP server config
+2. **Environment**: `.env` with `DIR_TICKETS=/path/to/tickets` (created by `setup.sh`)
+3. **Jira**: `~/.couchbase-support/jira.env` with `JIRA_INSTANCE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_KEY` (created by `setup.sh`)
 4. **Tools**: `rg` (ripgrep), `jq`, `aws` CLI, `ditto` (macOS — for zip64 cbcollect archives), `tshark` (for pcap analysis)
 
 ## Output Files

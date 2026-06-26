@@ -190,7 +190,7 @@ ticket-agents-manager
    - aws cli
 
 4. **Working Directory**:
-   - All agents expect to run from: `/Users/tin.tran/dev/couchbase/cbsupport_tools`
+   - All agents expect to run from the repo root (run `git rev-parse --show-toplevel` to confirm)
 
 ---
 
