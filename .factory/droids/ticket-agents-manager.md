@@ -72,7 +72,7 @@ Use the couchbase-log-analysis skill for searching logs.
 Consult couchbase-docs-expert for any documentation research.
 Consult couchbase-source-expert for any code-level investigation.
 
-Working directory: /Users/tin.tran/dev/couchbase/cbsupport_tools"
+Working directory: $(git rev-parse --show-toplevel)"
 ```
 
 **Wait for the analyzer to complete.** It will:
@@ -415,7 +415,7 @@ Hi [Customer Name],
 Please let me know if you have any questions or need further assistance.
 
 Regards,
-Tin Tran
+$(git config user.name)
 Couchbase Support
 ```
 

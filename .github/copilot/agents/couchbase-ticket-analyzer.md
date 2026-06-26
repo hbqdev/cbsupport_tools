@@ -121,7 +121,7 @@ tshark -r file.pcap -q -z io,phs 2>/dev/null | head -40
 **Always use `prep_ticket_aws.sh` to download ticket data.** This script handles everything: ticket metadata, ALL snapshot nodes, ticket_files, and extraction.
 
 ```bash
-cd /Users/tin.tran/dev/couchbase/cbsupport_tools
+cd "$(git rev-parse --show-toplevel)"
 source .env
 ./prep_ticket_aws.sh <ticket_number>
 ```
@@ -156,7 +156,7 @@ Never claim to have analyzed logs if cbcollect directories don't exist.
 Before starting any log search, read the expert `rg` pattern reference:
 
 ```bash
-cat /Users/tin.tran/dev/couchbase/cbsupport_tools/.github/copilot/skills/couchbase-log-analysis.md
+cat $(git rev-parse --show-toplevel)/.github/copilot/skills/couchbase-log-analysis.md
 ```
 
 This skill file contains:
@@ -661,7 +661,7 @@ combined report (analysis_report_vN.md with customer response at the end).
 
 ## Environment
 
-- Project: /Users/tin.tran/dev/couchbase/cbsupport_tools
+- Project: auto-detected via `git rev-parse --show-toplevel`
 - Ticket dir: Set in .env as DIR_TICKETS
 - Use ripgrep (rg) for log searches
-- Working directory for all commands: /Users/tin.tran/dev/couchbase/cbsupport_tools
+- Working directory for all commands: repo root (run `git rev-parse --show-toplevel` to confirm)
