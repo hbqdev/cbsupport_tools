@@ -297,12 +297,30 @@ get_ticket() {
     local url="https://supportal.couchbase.com/zendesk/ticket/${ticket_number}/status"
     local output_file="ticket_${ticket_number}.raw"
 
-    curl -s "$url" > "$output_file"
-    if [ $? -ne 0 ]; then
-        echo "Failed to fetch ticket $ticket_number" >&2
-        return 1
-    fi
-    echo "Saved to $output_file" >&2
+    local max_retries=5
+    local retry_delay=3
+    local attempt=1
+
+    while [ $attempt -le $max_retries ]; do
+        curl -s "$url" > "$output_file"
+        if [ $? -ne 0 ]; then
+            echo "Failed to fetch ticket $ticket_number (curl error)" >&2
+            return 1
+        fi
+        # Validate JSON: check first non-whitespace char is '{'
+        local first_char
+        first_char=$(head -c 1 "$output_file" 2>/dev/null)
+        if [ "$first_char" = "{" ]; then
+            echo "Saved to $output_file (attempt $attempt)" >&2
+            return 0
+        fi
+        echo "WARNING: API returned non-JSON (attempt $attempt/$max_retries), retrying in ${retry_delay}s..." >&2
+        sleep $retry_delay
+        attempt=$((attempt + 1))
+        retry_delay=$((retry_delay * 2))  # exponential backoff
+    done
+    echo "ERROR: Failed to fetch valid ticket data after $max_retries attempts" >&2
+    return 1
 
     # Build a readable timeline
     jq -r '
