@@ -123,6 +123,16 @@ preflight() {
     fi
     echo "Supportal reachable." >&2
 
+    # Check AWS SSO token — re-auth automatically if expired
+    echo "Checking AWS SSO session (profile: ${AWS_PROFILE})..." >&2
+    if ! aws sts get-caller-identity --profile "${AWS_PROFILE}" \
+            --output text --query 'Account' &>/dev/null; then
+        echo "AWS SSO session expired — re-authenticating..." >&2
+        aws sso login --profile "${AWS_PROFILE}"
+    else
+        echo "AWS SSO session valid." >&2
+    fi
+
     mkdir -p "$DIR_TICKETS"
 }
 
