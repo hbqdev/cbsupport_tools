@@ -9,3 +9,4 @@ SME-level reference for Couchbase Autonomous Operator (CAO 2.x+) and Kubernetes.
 | [networking.md](networking.md) | External connectivity, public DNS / alternate addresses, LoadBalancer/NodePort, TLS port mapping |
 | [operator-internals.md](operator-internals.md) | Upgrade stuck, rebalance loops, cert rotation, admission webhook, reconciliation failures |
 | [source-analysis.md](source-analysis.md) | Search `couchbase/couchbase-operator` source to confirm reconcile logic, defaults, error handling |
+| [docs-reference.md](docs-reference.md) | Official docs distilled — defaults, cloud gotchas, upgrade strategies, known issues, best practices |

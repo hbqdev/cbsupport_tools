@@ -29,6 +29,215 @@ You do NOT handle CBS log analysis (cbcollect), Jira ticket lookups, or source c
 
 ---
 
+## CAO Components — Three Parts
+
+1. **CRDs** — schema-validated custom resources (CouchbaseCluster, CouchbaseBucket, CouchbaseBackup, etc.)
+2. **Dynamic Admission Controller (DAC)** — validates CRD changes synchronously before they're written to etcd; stateless HTTPS webhook served by `couchbase-operator-admission` deployment; can be cluster-wide or namespace-scoped
+3. **Operator** — per-namespace deployment; watches CouchbaseCluster; reconciles actual → desired state
+
+**If DAC is down:** All `kubectl apply` to Couchbase CRDs fail immediately with a webhook error — different from the operator being down (which only affects reconciliation, not admission). Check both deployments:
+```bash
+kubectl get deployments -n <namespace> | grep -E "couchbase-operator|admission"
+```
+
+**Reconciliation priority order** — operator handles these in sequence, won't advance until prior step is stable:
+1. Hibernation / Pausing
+2. Prerequisite resources (services, TLS, logging)
+3. Cluster creation (pod provisioning)
+4. Node reconciliation (topology, scaling, upgrades)
+5. Post-topology (networking, buckets, RBAC, backups)
+
+This is why a networking or bucket fix won't apply while a node reconcile is blocked.
+
+---
+
+## CRD Key Defaults and Fields
+
+**Memory quota defaults (very low — almost always need overriding):**
+```
+dataServiceMemoryQuota:      256Mi
+indexServiceMemoryQuota:     256Mi
+analyticsServiceMemoryQuota: 1Gi
+eventingServiceMemoryQuota:  256Mi
+searchServiceMemoryQuota:    256Mi
+```
+
+**Memory overhead — 25% above all service quotas combined.** A pod with 16Gi data + 4Gi index quota needs minimum a 25Gi pod (`(16+4) × 1.25`). This is the most common cause of pod OOM kills on correctly-configured clusters.
+
+**Auto-failover:**
+```yaml
+spec:
+  cluster:
+    autoFailoverTimeout: "120s"      # 5–3600s
+    autoFailoverMaxCount: 1          # 1–3 (pre-7.1); wider post-7.1
+    autoFailoverOnDataDiskIssues: false
+```
+
+**Index storage mode:**
+```yaml
+spec:
+  cluster:
+    indexer:
+      storageMode: "plasma"          # plasma or memory_optimized
+```
+
+**WARNING — changing `serverName`:** Renaming a server class removes existing pods and creates new ones even if services are unchanged. Only rename when intentionally replacing nodes. Always change `name` and `services` simultaneously.
+
+---
+
+## Upgrade — Strategies and Gotchas
+
+**Default (SwapRebalance / RollingUpgrade):** Operator creates new pods, rebalances data in, removes old pods. Rollback supported while upgrade is in progress.
+
+**In-place upgrade:** Pod replaced without creating a new one — faster, preserves pod names and PVCs directly.
+
+**CAO 2.9+ upgrade config:**
+```yaml
+spec:
+  upgrade:
+    upgradeOrderType: ""            # Node, ServerGroup, ServerClass, Service
+    stabilizationPeriod: "1m"
+    previousVersionPodCount: 1      # Keep N old-version pods alive during upgrade
+    maxUpgradable: 1
+    maxUpgradablePercent: 25
+```
+
+**Mixed Mode:** When multiple CBS versions run simultaneously during upgrade, operator marks cluster as Mixed Mode — sidecar modifications and bucket storage backend migrations are disabled. Expected and temporary; resolves when upgrade completes.
+
+**CBS 8.0 breaking changes (via CAO upgrade):**
+| Change | Impact |
+|---|---|
+| Default bucket storage engine → `magma` (was `couchstore`) | Existing buckets migrated during upgrade |
+| Default vBucketCount → 128 (was 1024) | New buckets only; existing unchanged |
+| Memcached buckets removed | Must migrate before upgrading to 8.0 |
+| AVX2 CPU required | Check node CPU before 8.0 upgrade |
+
+---
+
+## Networking Models
+
+| Model | TLS | Recommended | When |
+|---|---|---|---|
+| Intra-Kubernetes | Optional | Yes | Single cluster, clients inside k8s |
+| Inter-Kubernetes forwarded DNS | Optional | Yes | GKE multi-cluster, AWS VPC peering |
+| Public with external DNS | Required | Yes | Clients outside k8s, internet |
+| Generic NodePort | None | **NO** | Never in production |
+
+**NodePort is explicitly not recommended** — no TLS support, breaks if NodePort assignment changes, incompatible with mTLS.
+
+**SDK minimum versions for alternate address / exposed features:**
+Java 2.7.7+ · Go 1.6.1+ · Node.js 2.5.0+ · C SDK 2.9.2+
+
+---
+
+## UI / Admin Console Access
+
+| Method | Command | Gotcha |
+|---|---|---|
+| Port-forward (plain) | `kubectl port-forward <pod> 8091` | Simplest |
+| Port-forward (TLS) | `kubectl port-forward <pod> 18091` | Needs CA cert in browser + `localhost` SAN |
+| DNS-based | `https://console.<dns.domain>:18091` | Requires public networking |
+| Ingress | nginx / Istio | **Must enable session affinity** |
+
+**Ingress without session affinity = broken UI.** CBS admin cookies are pod-specific. Must add:
+```
+nginx.ingress.kubernetes.io/affinity: cookie
+nginx.ingress.kubernetes.io/affinity-mode: persistent
+```
+
+---
+
+## Online Volume Expansion
+
+```yaml
+spec:
+  enableOnlineVolumeExpansion: true
+  onlineVolumeExpansionTimeoutInMins: 10    # 0–30
+```
+
+- Storage class must have `allowVolumeExpansion: true`
+- Block storage (EBS, Azure Disk, GCP PD) needs full filesystem expansion inside pod
+- Network storage (Glusterfs, Azure File) supports true online expansion
+- Falls back to rolling upgrade if online expansion fails
+- Volume can only increase — shrinking requires pod replacement
+
+---
+
+## Multi-Cluster Label Selection
+
+Multiple CouchbaseCluster resources in the same namespace will all manage all unlabeled CRs of each type. Use label selectors to scope each cluster's ownership:
+
+```yaml
+spec:
+  buckets:
+    managed: true
+    selector:
+      matchLabels:
+        cluster: cluster-1
+```
+
+CouchbaseBucket resources must carry the matching label. Without selectors, cluster-1 and cluster-2 will both try to manage the same buckets.
+
+**`buckets.synchronize: false` in production** — sync mode deletes buckets if the CouchbaseBucket CR is deleted. Never use in production.
+
+---
+
+## Cloud-Specific Gotchas
+
+### AWS EKS
+- Use `gp3` or `io2` EBS — `gp2` has burst IOPS limits that collapse under CBS write load
+- XDCR across clusters: VPC peering, non-overlapping CIDRs, security groups open TCP 30000–32767 between VPCs
+
+### Google GKE
+- Firewall rule required: allow all ingress from 10.0.0.0/8 for XDCR
+- Control plane firewall must allow port 8443 to DAC pod — without this, all CRD changes are rejected
+- ClusterRoleBinding granting cluster-admin required for operator service account
+
+### Microsoft Azure AKS
+- **AKS nodes have a maximum disk attach limit** — if you're near the limit, adding PVCs will fail; limit pods to one PVC beyond default
+- **Availability Zones not supported** — use numeric server group names, not AZ names
+- **No force-detach API** — ungraceful node failure leaves Azure Disk attached; manual intervention required (unlike EBS which has force-detach)
+
+---
+
+## MIR — Manual Intervention Required (CAO 2.9+)
+
+Circuit breaker for the reconciliation loop. When external factors cause repeated failures (TLS expiration, auth errors, repeated pod crashes), MIR mode stops the operator from requeuing indefinitely. Configured via `mirWatchdog` field. When triggered: operator stops reconciling and surfaces a clear condition — prevents the log noise of a runaway requeue loop.
+
+---
+
+## Known Issues (CAO 2.9.x)
+
+| Issue | Fix / Workaround |
+|---|---|
+| CouchbaseCluster CRD too large for `kubectl apply` | Use `kubectl apply --server-side` |
+| Memcached bucket creation fails in mixed mode during 8.0 upgrade | Avoid creating memcached buckets during upgrade |
+| Operator may prematurely complete upgrade if operator itself is upgraded mid-process | Upgrade operator and CBS in separate steps |
+| IPv6 config creates IPv4-only Services | Manual patch after apply |
+
+---
+
+## Best Practices (Official Docs)
+
+- **Dedicated nodes:** `spec.servers.pod.spec.nodeSelector` + `spec.antiAffinity: true` — prevents noisy-neighbor CPU/memory/disk/network starvation
+- **Namespace isolation:** Run operator and all clusters in their own namespace — RBAC blast radius, compliance
+- **Storage AZ locality:** Block storage must be provisioned in the same AZ as the pod — use `WaitForFirstConsumer`
+- **Guaranteed QoS:** `requests == limits` on all CBS pods — Burstable QoS means pod can be evicted by Kubernetes node pressure before hitting its own CBS memory limit
+
+**Kernel settings (via DaemonSet):**
+```
+vm.transparent_hugepage.enabled = never    # THP causes latency spikes on databases
+vm.transparent_hugepage.defrag = never
+```
+
+**Ulimits:**
+```
+LimitNOFILE = 40960
+LimitMEMLOCK = infinity
+```
+
+---
+
 ## Triage — Always Gather This First
 
 Before diagnosing anything, collect:
