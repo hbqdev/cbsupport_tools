@@ -30,42 +30,101 @@ kubectl logs -n <namespace> <operator-pod-name> --previous   # prior container
 
 ---
 
-## cbopinfo Structure
+## cbopinfo Structure (`cao collect-logs` output)
 
-`cbopinfo` is a zip archive collected by the operator or support. Inside:
+`cbopinfo` is a zip collected by `cao collect-logs`. The actual structure (as of CAO 2.x):
 
 ```
 <cbopinfo-root>/
-└── deployment/
-    └── <namespace>/           ← customer's namespace
-        ├── operator/
-        │   ├── deployment.yaml         ← operator Deployment spec
-        │   ├── logs/                   ← operator pod logs (current + previous)
-        │   └── events.yaml             ← namespace events
-        ├── couchbaseclusters/
-        │   └── <cluster-name>.yaml     ← the CouchbaseCluster CRD (source of truth)
-        ├── pods/
-        │   └── <pod-name>/
-        │       ├── describe.txt        ← kubectl describe pod output
-        │       ├── logs/               ← CBS pod logs per container
-        │       └── previous-logs/      ← prior container logs (OOM, crash)
-        ├── services/
-        │   └── *.yaml
-        ├── persistentvolumeclaims/
-        │   └── *.yaml
-        ├── persistentvolumes/
-        │   └── *.yaml
-        ├── configmaps/
-        ├── secrets/                    ← names only, values redacted
-        └── events.yaml
+├── clusterrole/                        ← K8s RBAC — rarely useful
+├── clusterrolebinding/                 ← K8s RBAC — rarely useful
+├── customresourcedefinition/           ← CRD versions installed; compare to Operator version
+│   ├── couchbasebackups.couchbase.com/
+│   │   └── couchbasebackups.couchbase.com.yaml
+│   └── ...                            ← all Couchbase CRDs
+├── metadata.json                       ← LOOK HERE FIRST: operator log path, CouchbaseCluster paths,
+│                                         exact cao collect-logs command used
+├── namespace/
+│   └── cb-cluster/                     ← CRUCIAL: customer namespace (any name)
+│       ├── couchbasebackup/
+│       │   └── my-backup/
+│       │       ├── my-backup.yaml      ← CRUCIAL for backup issues: spec/status, last run times
+│       │       └── events.yaml
+│       ├── couchbasebucket/
+│       │   └── my-bucket/
+│       │       └── my-bucket.yaml
+│       ├── couchbasecluster/
+│       │   └── cb-example/
+│       │       ├── cb-example.yaml     ← CRUCIAL: full CouchbaseCluster spec + status + conditions
+│       │       └── events.yaml
+│       ├── cronjob/                    ← created by CAO for full_only / full_incremental backup strategies
+│       │   ├── my-backup-full/
+│       │   │   └── my-backup-full.yaml
+│       │   └── my-backup-incremental/
+│       ├── deployment/
+│       │   ├── couchbase-operator/                  ← CRUCIAL: CAO deployment
+│       │   │   ├── couchbase-operator.log           ← CRUCIAL: CAO reconcile logs
+│       │   │   ├── couchbase-operator.yaml          ← Operator deployment spec (image tag = operator version)
+│       │   │   ├── events.yaml
+│       │   │   ├── pprof.block                      ← Go profiling data (for operator team)
+│       │   │   ├── pprof.goroutine
+│       │   │   ├── pprof.heap
+│       │   │   └── stats.cluster
+│       │   └── couchbase-operator-admission/        ← DAC deployment
+│       │       ├── couchbase-operator-admission.log ← DAC logs (webhook rejections)
+│       │       └── couchbase-operator-admission.yaml
+│       ├── job/
+│       │   └── my-backup-full-29006773/             ← timestamp is UNIX MINUTES (not seconds!)
+│       │       ├── my-backup-full-29006773.yaml
+│       │       └── events.yaml
+│       ├── persistentvolumeclaim/
+│       │   ├── cb-example-0000-data-00/
+│       │   │   ├── cb-example-0000-data-00.yaml     ← PVC spec/status, storageclass, capacity
+│       │   │   └── events.yaml
+│       │   └── my-backup/                           ← backup PVC (name = CouchbaseBackup name)
+│       ├── pod/
+│       │   ├── cb-example-0000/                     ← CBS data pod
+│       │   │   ├── cb-example-0000.yaml             ← pod spec/status
+│       │   │   ├── couchbase-server.log             ← CBS stdout/stderr (limited value)
+│       │   │   └── events.yaml                      ← K8s events for this pod (scheduling, readiness)
+│       │   ├── couchbase-operator-<hash>/           ← operator pod
+│       │   │   ├── couchbase-operator.log           ← mirror of deployment log above
+│       │   │   └── events.yaml
+│       │   └── my-backup-full-29006773-<id>/        ← backup job pod
+│       │       ├── cbbackupmgr-full.log             ← operator-backup output (what customers share)
+│       │       │                                       Note: name is misleading — it's Python wrapper
+│       │       │                                       output, not raw cbbackupmgr logs
+│       │       ├── events.yaml
+│       │       └── my-backup-full-29006773-<id>.yaml
+│       ├── poddisruptionbudget/
+│       ├── role/
+│       │   └── couchbase-backup/                    ← absent = cao create backup was never run
+│       ├── rolebinding/
+│       ├── secret/                                  ← secret names only, values redacted
+│       ├── service/
+│       │   ├── cb-example/                          ← headless service
+│       │   ├── cb-example-0000/                     ← per-pod service (if exposedFeatures set)
+│       │   ├── cb-example-srv/                      ← SRV record service
+│       │   └── cb-example-ui/                       ← admin console service
+│       └── serviceaccount/
+├── node/                               ← physical/VM node info (capacity, labels, taints)
+│   └── i-034def50f9cb5ac3d/
+│       └── i-034def50f9cb5ac3d.yaml
+└── persistentvolume/                   ← actual cloud disk info (only in cloud setups)
 ```
 
+**metadata.json is your map:** Contains path to operator logs and all CouchbaseCluster YAML paths. Start here if the namespace name is unclear or if customer has many deployments.
+
+**Two-namespace setups:** Some customers put the Operator deployment and CouchbaseCluster in separate namespaces. `cao collect-logs` only covers one namespace (`-n` flag). If the collection is missing operator logs *or* missing cluster resources, ask the customer to re-run specifying the other namespace.
+
+**CRD versions folder:** Use to verify if customer forgot to upgrade CRDs after upgrading the Operator. Compare CRD version to operator image tag.
+
 **Start here when reading cbopinfo:**
-1. `couchbaseclusters/<name>.yaml` — understand the intended topology
-2. `operator/logs/` — what the operator was doing/failing at
-3. `operator/events.yaml` — timeline of warnings and errors
-4. `pods/<node-name>/describe.txt` — for any pod that crashed or is stuck
-5. `persistentvolumeclaims/*.yaml` — for storage issues
+1. `metadata.json` — find the operator log path and CouchbaseCluster YAML paths
+2. `namespace/<ns>/couchbasecluster/<name>/<name>.yaml` — understand intended topology, read status.conditions
+3. `namespace/<ns>/deployment/couchbase-operator/couchbase-operator.log` — what operator was doing/failing
+4. `namespace/<ns>/pod/<pod>/events.yaml` — for any pod that's stuck or crashed
+5. `namespace/<ns>/persistentvolumeclaim/` — for storage issues
 
 ---
 

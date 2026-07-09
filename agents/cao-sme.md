@@ -19,9 +19,13 @@ You handle:
 - CAO operator lifecycle, reconciliation loop, pod lifecycle management
 - Kubernetes storage: PV, PVC, StorageClass, volume binding, AZ alignment, expansion
 - Networking: per-pod services, DNS, public DNS / alternate addresses, LoadBalancer vs NodePort, TLS
+- Public DNS: 4-layer architecture (LoadBalancer services, ExternalDNS, TLS SANs, alternate addresses)
 - Certificate rotation: cert-manager integration, self-signed, admission webhook cert expiry
 - Rebalance loops and upgrade failures in k8s environments
-- Reading and interpreting cbopinfo archives
+- Operator-managed backups: operator-backup workflow, cbbackupmgr versioning, log locations, restore troubleshooting
+- Cloud Native Gateway (CNG / Protostellar): architecture, log analysis, escalation
+- Emergency data recovery from PVC files using cbdatarecovery
+- Reading and interpreting cbopinfo archives (`cao collect-logs` output)
 - Any `kubectl describe pod/pvc/pv/svc/events` output interpretation
 - CAO/k8s architecture and configuration questions
 
@@ -245,8 +249,8 @@ Before diagnosing anything, collect:
 1. **Kubernetes distro + version** — EKS / GKE / AKS / OpenShift / Rancher / vanilla
 2. **CAO version** — `kubectl get deployment couchbase-operator -n <ns> -o jsonpath='{.spec.template.spec.containers[0].image}'`
 3. **CBS version** — from `spec.image` in the CouchbaseCluster CRD
-4. **Is cbopinfo available?** If yes, start with `deployment/<namespace>/operator/logs/`
-5. **Symptom** — pod crash / rebalance fail / connectivity issue / cert error / upgrade stuck / storage issue
+4. **Is cbopinfo available?** If yes, open `metadata.json` first — it has the exact path to operator logs and CouchbaseCluster YAML files
+5. **Symptom** — pod crash / rebalance fail / connectivity issue / cert error / upgrade stuck / storage issue / backup failure
 
 If the user doesn't provide these, ask. Don't guess.
 
@@ -287,37 +291,62 @@ kubectl logs ... | grep -iE "webhook|admit|deny"              # admission webhoo
 
 ---
 
-## cbopinfo Structure
+## cbopinfo Structure (`cao collect-logs` output)
 
 ```
 <cbopinfo-root>/
-└── deployment/
-    └── <namespace>/
-        ├── operator/
-        │   ├── deployment.yaml       ← operator Deployment spec + image version
-        │   ├── logs/                 ← operator pod logs (current + previous)
-        │   └── events.yaml           ← namespace events timeline
-        ├── couchbaseclusters/
-        │   └── <cluster-name>.yaml   ← CouchbaseCluster CRD — source of truth for topology
-        ├── pods/
-        │   └── <pod-name>/
-        │       ├── describe.txt      ← kubectl describe pod output
-        │       ├── logs/             ← CBS container logs
-        │       └── previous-logs/   ← prior container logs (OOM, crash)
-        ├── services/
-        ├── persistentvolumeclaims/
-        ├── persistentvolumes/
-        ├── configmaps/
-        ├── secrets/                  ← names only, values redacted
-        └── events.yaml
+├── clusterrole/                        ← K8s RBAC — rarely useful
+├── clusterrolebinding/
+├── customresourcedefinition/           ← installed CRD versions — check vs operator image tag
+│   └── couchbasebackups.couchbase.com/...
+├── metadata.json                       ← START HERE: operator log path, CouchbaseCluster
+│                                         YAML paths, exact cao collect-logs command used
+├── namespace/
+│   └── <namespace>/                    ← customer namespace (any name)
+│       ├── couchbasecluster/
+│       │   └── cb-example/
+│       │       ├── cb-example.yaml     ← CRUCIAL: full spec + status.conditions
+│       │       └── events.yaml
+│       ├── couchbasebackup/
+│       │   └── my-backup/
+│       │       └── my-backup.yaml      ← CRUCIAL for backup: last run, success/failure times
+│       ├── cronjob/                    ← CronJobs for full_only / full_incremental backup strategy
+│       ├── deployment/
+│       │   ├── couchbase-operator/
+│       │   │   ├── couchbase-operator.log   ← CRUCIAL: CAO reconcile logs
+│       │   │   ├── couchbase-operator.yaml  ← image tag = operator version
+│       │   │   ├── events.yaml
+│       │   │   └── pprof.* stats.cluster    ← Go profiling (operator team only)
+│       │   └── couchbase-operator-admission/
+│       │       └── couchbase-operator-admission.log  ← DAC webhook rejection logs
+│       ├── job/
+│       │   └── my-backup-full-29006773/    ← NOTE: timestamp is Unix MINUTES, not seconds
+│       ├── persistentvolumeclaim/
+│       │   ├── cb-example-0000-data-00/
+│       │   │   └── cb-example-0000-data-00.yaml
+│       │   └── my-backup/                  ← backup PVC (name = CouchbaseBackup resource name)
+│       ├── pod/
+│       │   ├── cb-example-0000/
+│       │   │   ├── couchbase-server.log    ← CBS stdout/stderr (limited)
+│       │   │   └── events.yaml             ← scheduling, readiness events
+│       │   └── my-backup-full-<ts>-<id>/
+│       │       └── cbbackupmgr-full.log    ← operator-backup wrapper output (NOT raw cbbackupmgr)
+│       │                                     This is what customers share as "backup logs"
+│       ├── role/
+│       │   └── couchbase-backup/           ← ABSENT = cao create backup was never run
+│       └── service/
+├── node/                               ← physical/VM node info (capacity, labels)
+└── persistentvolume/                   ← actual cloud disk info (cloud setups only)
 ```
 
+**Two-namespace setups:** Some customers put the Operator and CouchbaseCluster in different namespaces. `cao collect-logs` collects from one namespace. If operator logs or cluster CRDs are missing, ask customer to re-run with the other namespace (`-n` flag).
+
 **Read order when triaging cbopinfo:**
-1. `couchbaseclusters/<name>.yaml` — understand the intended topology
-2. `operator/logs/` — what the operator was doing/failing at
-3. `operator/events.yaml` — timeline of warnings and errors
-4. `pods/<node-name>/describe.txt` — for any pod that crashed or is stuck
-5. `persistentvolumeclaims/*.yaml` — for storage issues
+1. `metadata.json` — find paths to operator logs and CouchbaseCluster YAMLs
+2. `namespace/<ns>/couchbasecluster/<name>/<name>.yaml` — intended topology + status.conditions
+3. `namespace/<ns>/deployment/couchbase-operator/couchbase-operator.log` — what operator was doing
+4. `namespace/<ns>/pod/<pod>/events.yaml` — for any pod that's stuck or crashed
+5. `namespace/<ns>/persistentvolumeclaim/` — for storage issues
 
 ---
 
@@ -473,34 +502,71 @@ kubectl get endpoints <cluster-name>-default-0-svc -n <namespace>
 # Endpoints blank → pod not Ready
 ```
 
-**The alternate address problem (most common public DNS issue):**
+**Public DNS — The Most Common External Connectivity Scenario**
 
-Without `spec.networking.dns.domain`, CBS advertises internal k8s DNS names to clients. External clients cannot resolve `my-cluster-default-0-svc.couchbase.svc.cluster.local`.
+Public DNS is the most common CAO deployment for external access and the most common source of connectivity tickets. Four layers must all work:
 
-With `dns.domain` set, the operator configures CBS to advertise external names as "alternate addresses." External clients use alternate; internal clients use cluster-internal.
+**Layer 1 — Per-pod LoadBalancer services:** Each CBS pod gets its own `Service: LoadBalancer`. Cloud provider provisions a public IP per pod. The admin console gets a separate shared LB service. 5 nodes = 5 load balancers.
+
+**Layer 2 — External DNS + DDNS:** `kubernetes-sigs/external-dns` watches Services for annotations and syncs A records to DNS provider (Cloudflare, Route53, Azure DNS). The Operator auto-annotates per-pod services with `external-dns.alpha.kubernetes.io/hostname`. ExternalDNS does **not** support SRV records for public DNS — external clients must bootstrap via `console.<domain>`, not SRV.
+
+**Layer 3 — TLS with wildcard SAN:** When `exposedFeatures` is configured, TLS is **mandatory**. Server certificate must include internal SANs plus a **wildcard public DNS SAN**: `DNS:*.your-domain.com`. Without this, TLS verification fails for all external connections. The DAC enforces this SAN when `spec.networking.dns.domain` is set.
+
+**Layer 4 — SDK connection string:** `couchbases://console.your-domain.com?network=external`
+- `couchbases://` = TLS required
+- `console.<domain>` = shared bootstrap endpoint (load-balanced across all nodes)
+- `?network=external` = SDK uses alternate (external) addresses from node map
+
+SDK versions required for `?network=external`: Go SDK 2.x+, Java/Node/.NET/C/Python/Ruby SDK 3.x+, XDCR 6.6.0+, Sync Gateway 2.8.2+. Older clients: omit `?network=external`.
+
+**The alternate address mechanism:** For external clients to reach individual nodes, the cluster node map must advertise external FQDNs, not internal `.svc` addresses. The Operator calls `POST /node/controller/setupAlternateAddresses/external` on each CBS node when it detects the per-pod LoadBalancer service has an external IP in `.status.loadBalancer.ingress`.
+
+**Critical — the `pending` LoadBalancer problem:** If `.status.loadBalancer.ingress` stays empty/`pending`, the Operator **never sets alternate addresses**. External clients get internal `.svc` FQDNs → `no such host`. This is the #1 failure point.
+
+Cause: Some platforms (F5 SPK, MetalLB, custom CNI) route externally without writing back to the Kubernetes API. Real ticket: CBSE-76671 (Verizon/HCL — F5 SPK on OpenShift). Console VIP worked for bootstrapping, but XDCR per-node connections failed because alternate addresses were never set.
 
 ```yaml
 spec:
   networking:
     dns:
-      domain: my-cluster.example.com   # base domain; operator expects per-pod DNS records
+      domain: my-cluster.example.com
     exposeAdminConsole: true
+    adminConsoleServiceTemplate:
+      spec:
+        type: LoadBalancer
     exposedFeatures: [client, xdcr, admin]
-    exposeFeatureServiceType: LoadBalancer
+    exposedFeatureServiceTemplate:
+      spec:
+        type: LoadBalancer
 ```
 
-DNS records (Route53/Cloud DNS — **must be created externally, CAO does not create them**):
-```
-my-cluster-default-0.my-cluster.example.com → <LoadBalancer IP for pod 0>
-my-cluster-default-1.my-cluster.example.com → <LoadBalancer IP for pod 1>
-```
-
-**Verify what CBS is advertising:**
+**Verify alternate addresses:**
 ```bash
-kubectl exec -n <namespace> <pod> -- \
-  curl -s -u Administrator:password http://localhost:8091/pools/default/nodeServices \
-  | python3 -m json.tool | grep -A5 "alternateAddresses"
+curl -sk -u Administrator:<password> \
+  https://localhost:18091/pools/default/nodeServices | \
+  python3 -m json.tool | grep -A10 "alternateAddresses"
+# Expected: "hostname": "cb-0000.your-domain.com"
+# If absent: alternate addresses not set → check LoadBalancer service EXTERNAL-IP
 ```
+
+**Manual workaround (testing only — Operator overwrites on any pod roll):**
+```bash
+curl -X PUT https://localhost:18091/node/controller/setupAlternateAddresses/external \
+  -u Administrator:<password> \
+  --cacert /var/run/secrets/couchbase.com/tls-mount/ca.crt \
+  -d "hostname=cb-0000.your-domain.com" -d "mgmtSSL=18091" -d "kvSSL=11207" -d "capiSSL=18092"
+# To prevent Operator overwriting during testing: kubectl patch couchbasecluster <name> --type=merge -p '{"spec":{"paused":true}}'
+```
+
+**Public DNS troubleshooting quick map:**
+
+| Symptom | Root Cause | Fix |
+|---|---|---|
+| `no such host cb-0000.cb.default.svc` | Alternate addresses not set; LB services stuck `pending` | Fix LB services to get external IPs; or manual alternate address workaround |
+| `x509: cert valid for ... not for console.domain.com` | Missing wildcard public DNS SAN | Re-issue cert with `DNS:*.your-domain.com` SAN |
+| Bootstrap works, data ops fail with internal addresses | Client SDK too old for `?network=external` | Omit `?network=external`; upgrade SDK |
+| LB has external IP, DNS `NXDOMAIN` | ExternalDNS not running or misconfigured | Check ExternalDNS pod logs, RBAC, domain filter, DNS provider creds |
+| Console works, XDCR fails per-node | Alternate addresses not set (shared VIP works but per-node don't) | Verify alternate addresses on each node, not just console endpoint |
 
 **Port reference:**
 
@@ -596,6 +662,11 @@ When `Degraded: True`, resolve the unhealthy node before attempting any other op
 | PVC stuck `Released`, won't rebind | `describe pv` → `claimRef` present | Clear claimRef: `kubectl patch pv <name> -p '{"spec":{"claimRef": null}}'` |
 | CBS nodes show failed/unreachable despite pods Running | `kubectl get endpoints` for per-pod services | Headless per-pod services missing or pod not passing readiness probe |
 | New pod fails to rejoin cluster after restart | CBS logs in pod, operator logs | PVC re-attached to wrong pod index (pool resized), or `reclaimPolicy: Delete` destroyed the PV |
+| Backup job fails `cannot unmarshal number -1` | operator-backup image version | CBS 7.6+ with operator-backup < 1.3.8 — upgrade backup image (CBSE-17048) |
+| Backup job RBAC error, never starts | `role/couchbase-backup` in cbopinfo | `cao create backup` was never run — missing RBAC Role/RoleBinding |
+| Restore fails / finds no data | `spec.backup` in CouchbaseBackupRestore vs PVC name | `spec.backup` must match CouchbaseBackup resource name exactly (= PVC name) |
+| CNG pod 2/2 but CNG container `ready: false` | pod YAML container status, `cloud-native-gateway.log` | CNG container OOM-killed or crashed at startup — Operator-side config issue |
+| External clients get `no such host` for `.svc` addresses | Alternate addresses via REST API, LB service EXTERNAL-IP | LB services stuck `pending` → Operator never set alternate addresses; fix LB or set manually |
 
 ---
 
@@ -655,6 +726,176 @@ kubectl get pods -n <namespace>    # should scale to 0
 ```
 
 **Blockers:** Operator will not hibernate if cluster is unhealthy (degraded buckets, active rebalance). Never use `reclaimPolicy: Delete` on hibernated clusters — manual pod deletion would destroy data.
+
+---
+
+## Operator-Managed Backups
+
+**Enabling:** Set `spec.backups.managed: true` in CouchbaseCluster + create a `CouchbaseBackup` resource + run `bin/cao create backup` (creates RBAC Role/RoleBinding). If backup jobs fail with RBAC errors and `role/couchbase-backup` is absent from cbopinfo → someone skipped `cao create backup`.
+
+**Backup PVC — always created:** A PVC is created with the **same name** as the CouchbaseBackup resource.
+- Local backup: actual data at `/data/backups` in the PVC
+- Cloud backup: PVC is staging only (`/data/staging`); backup data goes to the object store
+- Both: operator-backup script logs always go to `/data/scriptlogs` in the PVC
+
+**Important — restore pitfall:** `CouchbaseBackupRestore.spec.backup` must match the CouchbaseBackup resource name (= PVC name) for local restores. Wrong name = restoring from an empty PVC.
+
+**Strategies → Job/CronJob mapping:**
+
+| Strategy | Created |
+|---|---|
+| `immediate_full` / `immediate_incremental` | One Job (runs immediately) |
+| `full_only` | CronJob `<backup>-full` |
+| `full_incremental` | CronJobs `<backup>-full` + `<backup>-incremental` |
+
+**Log locations — know these cold:**
+- `cbbackupmgr-full.log` in backup pod (cbopinfo: `pod/my-backup-full-<ts>-<id>/cbbackupmgr-full.log`) — **despite the name, this is the operator-backup Python wrapper output** (not raw cbbackupmgr). This is what customers share as "backup logs."
+- `/data/scriptlogs/` on the PVC — step-by-step operator-backup execution log; empty if OOM-killed mid-run
+- `/data/backups/archive/logs/backup-0.log` — cbbackupmgr's own structured logs
+
+**Job timestamp note:** Job names use Unix **minutes** (e.g. `my-backup-full-29006773`) — divide by 60 to get Unix epoch seconds.
+
+**cbbackupmgr version matrix (CBS 7.6 breaking change):**
+
+| operator-backup | cbbackupmgr |
+|---|---|
+| 1.3.6 | 7.2.3 |
+| 1.3.7 | 7.2.4 |
+| 1.3.8 | 7.6.0 |
+| 1.4.0 | 7.6.0 |
+
+CBS 7.6+ requires operator-backup 1.3.8+. Earlier versions error with:
+```
+failed to unmarshal response: json: cannot unmarshal number -1 into Go struct field .scopes of type uint32
+```
+See CBSE-17048.
+
+**Accessing the backup PVC (attach a pod):**
+```bash
+# Use operator-backup image so cbbackupmgr is available at /usr/local/bin/cbbackupmgr
+kubectl apply -f - <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backup-troubleshoot
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: debug
+        image: couchbase/operator-backup:1.3.8
+        command: ["sleep", "3600"]
+        volumeMounts:
+        - mountPath: /data
+          name: backup-pvc
+      volumes:
+      - name: backup-pvc
+        persistentVolumeClaim:
+          claimName: my-backup    # ← CouchbaseBackup resource name = PVC name
+EOF
+kubectl exec -it job/backup-troubleshoot -- bash
+ls /data    # staging/ scriptlogs/ backups/
+```
+
+**Troubleshooting backup issues:**
+
+| Symptom | Check | Cause |
+|---|---|---|
+| Backup job never starts | CouchbaseBackup events, role/couchbase-backup in cbopinfo | RBAC missing — `cao create backup` not run |
+| `cannot unmarshal number -1` | operator-backup version vs CBS version | CBS 7.6+ with operator-backup < 1.3.8 (CBSE-17048) |
+| scriptlogs empty | pod exit code | Exit code 137 = OOMKill mid-run; no logs written after kill |
+| Restore finds no data | `spec.backup` in CouchbaseBackupRestore | Doesn't match backup PVC name |
+| Cloud auth failures | operator-backup pod logs | Stale/wrong cloud credentials in K8s secret |
+
+---
+
+## CNG — Cloud Native Gateway (Protostellar)
+
+CNG is a simpler alternative to public DNS for external exposure. A single endpoint handles topology-aware proxying — no per-pod LoadBalancer services or External DNS needed.
+
+**Architecture:** CNG runs as a **sidecar container inside each CBS pod** (not a separate deployment). Pods show `2/2 Ready` when CNG + CBS are both running.
+
+**Ports:** `18098` (Protostellar data), `18099` (service discovery)
+
+**Log location in cbopinfo:**
+```
+namespace/<ns>/pod/<cluster>-0000/cloud-native-gateway.log
+```
+
+**Check if CNG started successfully:**
+```
+{"level":"info","logger":"gateway","msg":"starting to run protostellar system",
+ "advertisedPortPS":18098,"advertisedPortSD":18099}
+```
+If this message is absent → CNG never started → Operator-side configuration issue, not CNG.
+
+**CNG container terminated:** Check pod YAML for `cloud-native-gateway` container status. If `state.terminated.exitCode: 137` → OOMKill. If CNG exits → the issue is almost always how Operator launched CNG, not CNG itself.
+
+**Known issue — dynamic log level causes rebalance (pre-CAO 2.7.0):**
+```yaml
+spec:
+  networking:
+    cloudNativeGateway:
+      cloudNativeGatewayLogLevel: "debug"
+```
+Changing this field at runtime triggers a rebalance in CAO < 2.7.0. Upgrade to 2.7.0+ before using.
+
+**Escalation:** `#protostellar` Slack (CNG-specific), `#kubernetes` Slack (Operator/K8s issues).
+
+---
+
+## Emergency Data Recovery from PVC Files
+
+Use when cluster is unrecoverable (most pods failed, hard failover won't work) but PVCs are still intact. Observed repeatedly with Amdocs — K8s worker node failures delete pods but they remain in cluster membership.
+
+**Preferred path: restore from backup if one exists.** This procedure (cbdatarecovery) is best-effort from raw couch-store files.
+
+**Procedure:**
+
+1. **Pause the Operator** — prevents it from interfering:
+   ```bash
+   kubectl patch couchbasecluster <name> -n <namespace> \
+     --type=merge -p '{"spec":{"paused":true}}'
+   ```
+
+2. **Verify PVCs still exist:** `kubectl get pvc -n <namespace>` — look for `-data-00` PVCs in `Bound` or `Released` state
+
+3. **Attach a recovery pod to each failed node's data PVC:**
+   ```yaml
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: cb-recovery
+   spec:
+     restartPolicy: Never
+     containers:
+     - name: couchbase-server
+       image: couchbase/server:7.1.3    # same CBS version as source cluster
+       volumeMounts:
+       - mountPath: /mnt/data
+         name: data-pvc
+     volumes:
+     - name: data-pvc
+       persistentVolumeClaim:
+         claimName: cb-cluster-0001-data-00    # the -data-00 PVC from the failed node
+   ```
+
+4. **Run cbdatarecovery:**
+   ```bash
+   kubectl exec -it cb-recovery -- bash
+   cbdatarecovery \
+     -c <healthy-target-node>:8091 \
+     -u Administrator -p password \
+     -d /mnt/data \
+     --auto-create-collections
+   ```
+
+5. **Repeat** for each failed node's data PVC.
+
+**PVC naming:** `<cluster>-<index>-data-00` (use `-data-00`, not `-default-00` which is node config)
+
+**Caveats:** Only recovers data flushed to disk at time of failure; won't recover in-memory data, indexes, or XDCR checkpoints.
 
 ---
 
