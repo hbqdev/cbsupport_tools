@@ -416,3 +416,127 @@ cat /sys/fs/cgroup/memory/memory.limit_in_bytes  # cgroup v1
 
 **Workaround (no upgrade needed):**
 Set `MEMBASE_RAM_MEGS=<target_MB>` environment variable on CBS pods — `memory_quota.erl` checks this first, bypassing all cgroup/proc detection.
+
+---
+
+## Network Policies
+
+If `NetworkPolicy` resources exist in the namespace, CBS pod-to-pod and pod-to-operator traffic may be silently blocked. Symptom: cluster forms but nodes fail to join, or rebalance hangs with no obvious error.
+
+```bash
+kubectl get networkpolicy -n <namespace>
+kubectl describe networkpolicy <name> -n <namespace>
+```
+
+Required ingress/egress for CBS pods:
+- All pods in the namespace on all ports (CBS inter-node Erlang distribution is broad)
+- Operator pod → CBS pods on 8091/18091 (REST health checks)
+- Clients → CBS pods on relevant service ports (8091, 11210, 8093, etc.)
+
+---
+
+## Hibernation
+
+Setting `spec.hibernate: true` scales all CBS pods to zero while preserving PVCs. Operator stores last-known state and restores when `hibernate: false`.
+
+```bash
+kubectl patch couchbasecluster <name> -n <namespace> \
+  --type=merge -p '{"spec":{"hibernate":true}}'
+kubectl get pods -n <namespace>    # should scale to 0
+```
+
+**Blockers:** Operator will not hibernate if cluster is unhealthy (degraded buckets, active rebalance). Never use `reclaimPolicy: Delete` on hibernated clusters — manual pod deletion would destroy data.
+
+---
+
+## CouchbaseCluster Spec — Storage Reference
+
+```yaml
+spec:
+  servers:
+  - name: data-nodes
+    size: 3
+    services: [data]
+    volumeMounts:
+      default: couchbase        # maps volumeClaimTemplate "couchbase" → /opt/couchbase/var
+    pod:
+      resources:
+        requests:
+          memory: "16Gi"
+          cpu: "4"
+        limits:
+          memory: "16Gi"        # Always equal to requests — Guaranteed QoS
+          cpu: "4"
+  volumeClaimTemplates:
+  - metadata:
+      name: couchbase
+    spec:
+      storageClassName: gp3
+      resources:
+        requests:
+          storage: 500Gi
+      accessModes:
+      - ReadWriteOnce            # Only supported mode for CBS data nodes
+```
+
+**Guaranteed QoS:** Always set `requests == limits`. CBS is sensitive to OOM; Burstable QoS (requests < limits) means the pod can be evicted under node memory pressure before hitting its own limit.
+
+---
+
+## Operator Source Code Analysis
+
+When behavior needs to be confirmed at the code level — reconcile logic, upgrade state machine, error handling, default values — search the operator source directly.
+
+**Repository:** `couchbase/couchbase-operator` (Go)
+
+**Version → tag mapping:**
+```bash
+gh api repos/couchbase/couchbase-operator/git/refs/tags \
+  | python3 -c "
+import sys, json
+for t in json.load(sys.stdin):
+    ref = t['ref'].replace('refs/tags/','')
+    if '2.8' in ref: print(ref)
+"
+```
+
+**Search for a function, error, or behavior:**
+```bash
+# Search across the operator repo
+gh search code "gracefulFailover" --repo couchbase/couchbase-operator --limit 20
+
+# Search for a specific log message
+gh search code "cluster not ready" --repo couchbase/couchbase-operator --limit 10
+
+# Search for a config field or CRD behavior
+gh search code "WaitForFirstConsumer" --repo couchbase/couchbase-operator --limit 10
+```
+
+**Read a file at an exact version tag:**
+```bash
+gh api "repos/couchbase/couchbase-operator/contents/pkg/controller/reconcile.go?ref=v2.8.0" \
+  | python3 -c "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['content']).decode())"
+```
+
+**Sparse clone for deep reading:**
+```bash
+git clone --depth 1 --filter=blob:none --sparse \
+  --branch v2.8.0 \
+  git@github.com:couchbase/couchbase-operator.git \
+  ~/couchbase-src/couchbase-operator-v2.8.0
+
+cd ~/couchbase-src/couchbase-operator-v2.8.0
+git sparse-checkout set pkg/controller pkg/apis
+```
+
+**Key packages to know:**
+
+| Package path | What's in it |
+|---|---|
+| `pkg/controller/` | Main reconciliation logic — cluster, bucket, user, backup controllers |
+| `pkg/apis/couchbase/v2/` | CRD type definitions — all CouchbaseCluster spec fields |
+| `pkg/util/` | Shared utilities, retry logic, error handling |
+| `pkg/manager/` | Operator startup, leader election, webhook server |
+| `cmd/operator/` | Entry point |
+
+**Always pin to the customer's exact CAO version tag.** Never read from `main` for customer issues — behavior changes between releases.
