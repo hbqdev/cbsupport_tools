@@ -322,6 +322,15 @@ get_ticket() {
         first_char=$(head -c 1 "$output_file" 2>/dev/null)
         if [ "$first_char" = "{" ]; then
             echo "Saved to $output_file (attempt $attempt)" >&2
+
+            # Build a readable timeline
+            jq -r '
+                [.timeline_events[] | select(.markdown?)]
+                | sort_by(.timestamp)
+                | .[]
+                | "\(.timestamp)\n\(.author.name)\n\(.markdown)\n"
+            ' "$output_file" > ticket_timeline.json 2>/dev/null || true
+
             return 0
         fi
         echo "WARNING: API returned non-JSON (attempt $attempt/$max_retries), retrying in ${retry_delay}s..." >&2
@@ -331,14 +340,6 @@ get_ticket() {
     done
     echo "ERROR: Failed to fetch valid ticket data after $max_retries attempts" >&2
     return 1
-
-    # Build a readable timeline
-    jq -r '
-        [.timeline_events[] | select(.markdown?)]
-        | sort_by(.timestamp)
-        | .[]
-        | "\(.timestamp)\n\(.author.name)\n\(.markdown)\n"
-    ' "$output_file" > ticket_timeline.json 2>/dev/null || true
 }
 
 ###############################################################################
