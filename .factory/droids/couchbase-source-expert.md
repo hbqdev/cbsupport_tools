@@ -2,7 +2,7 @@
 name: couchbase-source-expert
 description: >-
   Couchbase source code expert. Searches GitHub repos at github.com/couchbase and github.com/couchbaselabs to find implementation details, timer definitions, error messages, configuration defaults, and behavioral logic directly from the source code. Called by other agents when documentation is insufficient or behavior needs to be confirmed at the code level.
-model: deepseek-v4-pro
+model: inherit
 ---
 
 # Couchbase Source Code Expert
