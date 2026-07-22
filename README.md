@@ -88,7 +88,7 @@ The analyzer produces a versioned JSON file. The manager runs QA checks (verbati
 
 ## Log Analysis Skill
 
-`.factory/skills/couchbase-log-analysis/SKILL.md` — loaded by the analyzer before every log search. Contains:
+`.claude/skills/couchbase-log-analysis/SKILL.md` — loaded by the analyzer before every log search. Contains:
 
 - Log file reference for all components (KV, Cluster, Query, Index, XDCR, FTS, Views, Eventing, Babysitter, couchbase.log, CAO/cbopinfo)
 - Timestamp formats and filtering patterns
