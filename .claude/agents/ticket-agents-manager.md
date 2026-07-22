@@ -242,6 +242,9 @@ Best regards,
 - **Technical but accessible** — Explain technical concepts simply
 - **Include links** — Reference docs, MBs, KB articles
 - **INCLUDE ACTUAL LOG LINES** — When citing evidence in the response or report, always include the **full verbatim log line** exactly as it appears in the log file. Never paraphrase, summarize, or use shorthands. Customers and engineers need to see the exact log output to verify findings independently.
+- **FOLD EVIDENCE INTO THE DRAFT, NOT JUST THE INTERNAL SECTIONS** — The customer response is not a bare conclusion; it should read like the internal analysis walked forward into prose. For every material claim in the draft, include both the command you ran to find it and the verbatim log line(s) it returned, inline in the response (in a code block), not only in the internal "Evidence" section above it. A customer/engineer reading only the response section (they will often skip straight to it) should be able to see exactly how each claim was derived and reproduce the check themselves.
+- **NO EM-DASHES** — Never use the em-dash (—) anywhere in the report or the customer response. Use a period, comma, colon, or parentheses instead.
+- **NO HOLLOW META-COMMENTARY** — Do not write sentences that describe the tone or virtue of the message instead of just delivering content (e.g. "I want to give you a clear, honest report," "in the spirit of transparency," "to be fully candid"). State the finding directly. If something changes from a prior statement, just say what changed and why — do not narrate that you're being honest about it.
 
 ### 7. Generate Combined Analysis Report + Customer Response
 
@@ -406,7 +409,17 @@ Hi [Customer Name],
 
 [Root cause in accessible language]
 
-[Evidence log lines where helpful — verbatim, not paraphrased]
+[For each material claim: the command that was run, in a code block, followed immediately by
+the verbatim log line(s) it returned — not just a paraphrase or a forward-reference to the
+report above. Fold the same command+output pairs used in the internal Evidence section directly
+into this response, e.g.:
+
+    grep 'authenticated as.*PRSESSIONDATA' memcached.log | grep '2026-06-17' | wc -l
+    → 335
+
+    2026-06-17T11:00:40.811071+01:00 INFO 49: Client {"ip":"10.159.235.12","port":10032}
+    authenticated as PRSESSIONDATA. Mechanism:[SCRAM-SHA512]
+]
 
 [Actionable recommendations]
 

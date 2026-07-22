@@ -82,7 +82,7 @@ If a ticket includes pcap or pcap.gz files (tcpdump captures), you **MUST** anal
 
 **Use the tshark patterns from the skill:**
 ```bash
-cat $(git rev-parse --show-toplevel)/.factory/skills/couchbase-log-analysis/SKILL.md
+cat $(git rev-parse --show-toplevel)/.claude/skills/couchbase-log-analysis/SKILL.md
 # See: "tshark Patterns (pcap / tcpdump Analysis)" section
 ```
 
@@ -192,7 +192,7 @@ Never claim to have analyzed logs if cbcollect directories don't exist.
 Before starting any log search, read the expert `rg` pattern reference:
 
 ```bash
-cat $(git rev-parse --show-toplevel)/.factory/skills/couchbase-log-analysis/SKILL.md
+cat $(git rev-parse --show-toplevel)/.claude/skills/couchbase-log-analysis/SKILL.md
 ```
 
 This skill file contains:
