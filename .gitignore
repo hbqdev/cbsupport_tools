@@ -197,3 +197,12 @@ cython_debug/
 
 # Local Jira credentials (never commit)
 ~/.couchbase-support/
+
+# Regenerable caches produced by the miners in ~/dev/trr-studio/tools/ —
+# re-run the named script to regenerate; none of it is committed here.
+#   mine_ticket_analyses.py      -> mined-analyses/       (local Claude Code session history)
+#   mine_confluence_kb.py        -> confluence-kb/        (Confluence "SWD" space)
+#   mine_domain_context_themes.py -> domain-context-themes/ (reshaped from the two above)
+mined-analyses/
+confluence-kb/
+domain-context-themes/
