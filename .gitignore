@@ -206,3 +206,13 @@ cython_debug/
 mined-analyses/
 confluence-kb/
 domain-context-themes/
+
+# Raw ticket dumps (prep_ticket_aws.sh / extract_ticket_timeline.sh output).
+# These are verbatim Zendesk records — real customer emails, names, org ids
+# and production infrastructure detail — and must never be committed. Keep
+# them under $DIR_TICKETS, not in the repo.
+ticket_*.raw
+ticket_*.json
+ticket_timeline.json
+analysis_metadata_v*.json
+analysis_report_v*.md
