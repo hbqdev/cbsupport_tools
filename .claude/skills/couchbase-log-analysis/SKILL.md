@@ -199,35 +199,125 @@ rg -iN "exit.*abnormal|exit.*killed|exit.*shutdown" \
 
 ## Query (ns_server.query.log + completed_requests.json)
 
+**MANDATORY for any query performance / query timeout ticket: analyze `completed_requests.json` before forming a root cause.** It is included in every query node's cbcollect directory and is the authoritative per-request record: it carries the real per-phase timings and per-phase row counts, which is the only way to tell whether time went into the index scan, the KV fetch, or the post-fetch filter. Diagnosing a slow query from `ns_server.query.log` alone will produce guesses about magnitude that the phase data contradicts.
+
+### File structure (get this right or every query silently returns nothing)
+
+`completed_requests.json` is **one JSON object with a `results` array**, not NDJSON and not a top-level array:
+
+```json
+{ "requestID": "...", "signature": {...}, "results": [ {req}, {req}, ... ] }
+```
+
+So every jq filter must start from `.results[]`. A filter like `jq 'select(.elapsedTime)'` matches nothing, and if it is paired with `2>/dev/null` the failure is invisible and looks like "no slow queries found".
+
 ```bash
-# Errors and timeouts in query log
-rg -iN "timeout|error|Index not ready|GSI.*fail|panic" \
-  cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
+# Sanity check first: entry count and date coverage
+jq -r '.results | length' cbcollect_*/completed_requests.json
+jq -r '.results[].requestTime[0:10]' cbcollect_*/completed_requests.json | sort | uniq -c
+```
 
-# Slow queries (elapsed > 5s) — structured jq extraction
-jq -r 'select(.elapsedTime != null) |
-  [.requestTime, .elapsedTime, .statement[0:120], (.errors[0].msg // "")] | @tsv' \
-  cbcollect_*/completed_requests.json 2>/dev/null | sort -k2 -rn | head -30
+### Per-request fields that matter
 
-# All queries with errors in the window
-jq -r 'select(.errors != null and (.errors | length) > 0) |
-  [.requestTime, .errors[0].code, .errors[0].msg[0:100]] | @tsv' \
-  cbcollect_*/completed_requests.json 2>/dev/null \
-  | rg "<TIMESTAMP_WINDOW>" | head -30
+- `requestTime`, `elapsedTime`, `serviceTime`, `statement`, `node`, `errorCount`
+- `phaseTimes`: `parse`, `plan`, `authorize`, `indexScan`, `indexScan.GSI`, `fetch`, `filter`, `project`, `stream`, `run`
+- `phaseCounts`: `indexScan`, `indexScan.GSI`, `fetch`, `filter`, `primaryScan`. **These are row/document counts, and they are the key to scaling questions.**
+- `errors[]`: `code`, `key`, `message`, `retry` (timeout is `code 1080`, `key "timeout"`)
+- `namedArgs`, `positionalArgs`: often redacted as `<ud>...</ud>` when log redaction is on, so do not assume you can read parameter values
 
-# Primary scans (missing or unused index — performance red flag)
-jq -r 'select(.phaseCounts.primaryScan? > 0) |
-  [.requestTime, .elapsedTime, .statement[0:120]] | @tsv' \
-  cbcollect_*/completed_requests.json 2>/dev/null | head -20
+```bash
+# Slowest requests with the full phase breakdown
+jq -r '.results[] | [.requestTime, .elapsedTime,
+        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
+        (.phaseTimes.filter // "-"), (.phaseCounts.fetch // 0),
+        (.statement[0:80] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
 
-# GSI endpoint that served "Index not ready" errors — identifies which node
-rg -oiN 'GsiScanClient:"[^"]*"' cbcollect_*/ns_server.query.log \
-  | rg "<TIMESTAMP_WINDOW>" | sort | uniq -c | sort -rn | head -20
+# Requests that errored, with error code and retry flag
+jq -r '.results[] | select(.errorCount > 0) |
+       [.requestTime, .elapsedTime, .errors[0].code, .errors[0].key,
+        (.errors[0].retry|tostring), (.statement[0:70] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | head -30
 
 # Error code frequency
-jq -r '.errors[]?.code' cbcollect_*/completed_requests.json 2>/dev/null \
-  | sort | uniq -c | sort -rn | head -20
+jq -r '.results[].errors[]?.code' cbcollect_*/completed_requests.json \
+  | sort | uniq -c | sort -rn
+
+# Primary scans (no usable index at all)
+jq -r '.results[] | select((.phaseCounts.primaryScan // 0) > 0) |
+       [.requestTime, .elapsedTime, (.statement[0:100] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | head -20
+
+# GSI endpoint that served "Index not ready" errors, identifies which node
+rg -oiN 'GsiScanClient:"[^"]*"' cbcollect_*/ns_server.query.log \
+  | rg "<TIMESTAMP_WINDOW>" | sort | uniq -c | sort -rn | head -20
 ```
+
+### Query performance workflow (follow all five steps)
+
+**Step 1 - Isolate the offending statement and get its per-day profile.** Never analyze only the incident window. The comparison between a known-good day and the bad day is what actually identifies the trigger.
+
+```bash
+python3 - <<'EOF'
+import json, re, glob, statistics
+from collections import defaultdict
+MATCH = "promotions"          # substring identifying the statement under investigation
+for f in glob.glob("cbcollect_*/completed_requests.json"):
+    d = json.load(open(f, errors="replace"))
+    hits = [r for r in d["results"] if MATCH in (r.get("statement") or "")]
+    def secs(s):
+        m = re.match(r'^(?:(\d+)h)?(?:(\d+)m)?([\d.]+)(ns|us|µs|ms|s)$', s or "")
+        if not m: return 0.0
+        h, mi, v, u = m.groups()
+        mult = {"s":1,"ms":1e-3,"us":1e-6,"µs":1e-6,"ns":1e-9}[u]
+        return int(h or 0)*3600 + int(mi or 0)*60 + float(v)*mult
+    by = defaultdict(list)
+    for r in hits: by[r.get("requestTime","")[:10]].append(r)
+    print(f"== {f}  matching={len(hits)}")
+    print(f"{'date':<12}{'execs':>6}{'elapsed_p50':>12}{'fetch_docs_p50':>16}{'errs':>6}")
+    for day in sorted(by):
+        rs = by[day]
+        el = sorted(secs(r.get("elapsedTime")) for r in rs)
+        fd = sorted(r.get("phaseCounts",{}).get("fetch",0) for r in rs)
+        errs = sum(1 for r in rs if r.get("errorCount",0))
+        print(f"{day:<12}{len(rs):>6}{el[len(el)//2]:>12.3f}{fd[len(fd)//2]:>16,}{errs:>6}")
+EOF
+```
+
+**Step 2 - Read the phase breakdown for one good execution and one bad execution.** Quote both verbatim in the report. This tells you which phase actually grew. An `indexScan` of 20ms with a `fetch` of 2.4s means the index is fine and the cost is document retrieval, so index tuning advice would be wrong.
+
+**Step 3 - Compare `phaseCounts`, not just times.** If `phaseCounts.fetch` grew, the query is processing more documents, which points at data growth or a widened predicate rather than a cluster fault. This distinction changes the entire recommendation.
+
+**Step 4 - Correlate with index size over time.** `ns_server.indexer_stats.log` is a timestamped series, so extract the trend rather than reading one sample:
+
+```bash
+python3 - <<'EOF'
+import re, glob
+IDX = "snapshot_parentId_groupingIds_PR"     # index name from the query plan
+pat = re.compile(r'^(2026-\S+) indexstorage_\S*' + IDX + r':\d+:0 .*?"items_count":(\d+)')
+for f in glob.glob("cbcollect_*/ns_server.indexer_stats.log"):
+    prev = None
+    for line in open(f, errors="replace"):
+        m = pat.match(line)
+        if m and int(m.group(2)) != prev:
+            prev = int(m.group(2))
+            print(f"{f.split('/')[0][-14:]}  {m.group(1)[:19]}  items_count={prev:,}")
+EOF
+```
+
+**Step 5 - Confirm the KV side.** Bulk fetch failures spread across many data nodes indicate one query pulling a very large document set, not an unhealthy node. Concentration on a single node means the opposite.
+
+```bash
+rg -N "i/o timeout" cbcollect_*/ns_server.query.log | grep -oE "^2026-[0-9-]{5}" | sort | uniq -c
+rg -N "i/o timeout" cbcollect_*/ns_server.query.log | grep -oE '>[0-9.]+:11210' | sort | uniq -c | sort -rn
+```
+
+### Traps that produce wrong conclusions
+
+- **A duration pinned to the exact `statement_timeout` value is the timeout firing, not the operation's natural cost.** If many scans or requests all report exactly 3.000s against a 3s timeout, the work was terminated mid-flight. Find a successful execution from a healthy window to learn the real cost. Do not report the timeout value as a measured duration.
+- **`phaseCounts.fetch` on a timed-out request is only how far it got**, not the size of the full result set. Do not present it as the total.
+- **GSI backfill temp files (`new temp file` / `removing temp file` in `ns_server.query.log`) indicate a scan result set exceeding the client buffer, but they are often routine and fast.** Measure the create-to-remove interval per request id across several days before calling them pathological. A lifetime cumulative `gsi_total_temp_files` counter says nothing about current duration.
+- **Index `items_count` is a time series.** Reading a single sample and asserting "the index holds N entries" is unsafe, the value may have changed by orders of magnitude within the collected window.
 
 ---
 
@@ -634,7 +724,7 @@ rg -oN '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' memcached.log | head -1  # first
 rg -oN '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' memcached.log | tail -1  # last
 
 # Error code frequency from completed_requests
-jq -r '.errors[]?.code' cbcollect_*/completed_requests.json 2>/dev/null \
+jq -r '.results[].errors[]?.code' cbcollect_*/completed_requests.json \
   | sort | uniq -c | sort -rn
 
 # Count pattern frequency per hour (trend analysis)

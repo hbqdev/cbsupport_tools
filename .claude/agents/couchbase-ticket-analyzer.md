@@ -386,16 +386,42 @@ rg -iN "Too many open connections|connection.*refuse|connection.*reset" cbcollec
 ```
 
 **Query issues (ns_server.query.log, completed_requests.json):**
+
+⛔ **For any query latency or query timeout ticket, `completed_requests.json` is MANDATORY, not optional.** It is the only source of real per-phase timings (`phaseTimes`) and per-phase row counts (`phaseCounts`), which is what distinguishes an index-scan problem from a KV-fetch problem from a post-fetch-filter problem. A root cause built only from `ns_server.query.log` will produce guesses about magnitude that the phase data contradicts. See the "Query performance workflow" in the log-analysis skill and follow all five steps.
+
+**Note the file structure**: it is one JSON object with a `results` array, NOT NDJSON and NOT a top-level array. Every jq filter must start from `.results[]`, otherwise it silently matches nothing (and `2>/dev/null` hides the failure).
+
 ```bash
-# Timeout detection
+# Sanity check FIRST: entry count and date coverage
+jq -r '.results | length' cbcollect_*/completed_requests.json
+jq -r '.results[].requestTime[0:10]' cbcollect_*/completed_requests.json | sort | uniq -c
+
+# Timeout detection in the query log
 rg -iN "timeout|duration.*[0-9]{4,}" cbcollect_*/ns_server.query.log
 
-# Slow queries from completed_requests
-jq '.[] | select(.elapsedTime > "5s")' cbcollect_*/completed_requests.json
+# Slowest requests WITH the phase breakdown and documents fetched
+jq -r '.results[] | [.requestTime, .elapsedTime,
+        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
+        (.phaseTimes.filter // "-"), (.phaseCounts.fetch // 0),
+        (.statement[0:80] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
 
-# Primary scan detection
+# Errored requests with code and retry flag (timeout is code 1080)
+jq -r '.results[] | select(.errorCount > 0) |
+       [.requestTime, .elapsedTime, .errors[0].code, .errors[0].key,
+        (.errors[0].retry|tostring)] | @tsv' \
+  cbcollect_*/completed_requests.json | head -30
+
+# Primary scan detection (no usable index at all)
+jq -r '.results[] | select((.phaseCounts.primaryScan // 0) > 0) |
+       [.requestTime, .elapsedTime, (.statement[0:100] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | head -20
 rg -iN "UnboundedScan|PrimaryScan|_all_docs" cbcollect_*/ns_server.query.log
 ```
+
+**Always profile a known-good window and compare it against the failing window.** Group the offending statement's executions by day and compare `elapsedTime` alongside `phaseCounts.fetch`. If the document count grew, the cause is data growth or a widened predicate rather than a cluster fault, which changes the entire recommendation. Correlate with the `items_count` trend from `ns_server.indexer_stats.log` (a timestamped series, so extract the trend, never a single sample).
+
+**Do not report a timeout value as a measured duration.** If durations land on exactly the configured timeout (for example 3.000s against a 3s `statement_timeout`), the work was terminated mid-flight. Find a successful execution from a healthy window to establish the real cost. Likewise `phaseCounts.fetch` on a timed-out request is only how far it got, not the full result set size.
 
 **Index issues (ns_server.indexer.log) — and for any query latency complaint, ALWAYS analyze indexer.log:**
 
@@ -407,8 +433,11 @@ When the customer's primary complaint is query latency or `Index not ready for s
 rg -iN "Index not ready|GSI.*error|index.*not found|timeout" cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
 
 # Slow queries by elapsed time — identify which index names / keyspaces were involved
-jq -r 'select(.elapsedTime != null) | [.requestTime, .elapsedTime, .statement[0:120], .errors[0].msg] | @tsv' \
-  cbcollect_*/completed_requests.json 2>/dev/null | sort -k2 -rn | head -30
+# (note .results[] — the file is an object with a results array, not a top-level array)
+jq -r '.results[] | [.requestTime, .elapsedTime,
+        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
+        (.phaseCounts.fetch // 0), (.statement[0:100] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
 
 # Count "Index not ready" errors per index name
 rg -oiN 'Index not ready.*index [^ ]+' cbcollect_*/ns_server.query.log | sort | uniq -c | sort -rn | head -20

@@ -112,28 +112,58 @@ rg -iN "disk.*full|disk_usage|memory.*high|disk.*watermark" \
 
 ## Query (ns_server.query.log, completed_requests.json)
 
+**MANDATORY for any query performance / query timeout ticket: analyze `completed_requests.json` before forming a root cause.** It is in every query node's cbcollect directory and is the only source of real per-phase timings and per-phase row counts, which is what distinguishes an index-scan problem from a KV-fetch problem from a post-fetch-filter problem.
+
+**File structure**: it is one JSON object with a `results` array, not NDJSON and not a top-level array:
+
+```json
+{ "requestID": "...", "signature": {...}, "results": [ {req}, {req}, ... ] }
+```
+
+Every jq filter must therefore start from `.results[]`. A filter like `jq 'select(.elapsedTime)'` matches nothing, and paired with `2>/dev/null` that failure is invisible and looks like "no slow queries found".
+
 ```bash
+# Sanity check: entry count and date coverage
+jq -r '.results | length' cbcollect_*/completed_requests.json
+jq -r '.results[].requestTime[0:10]' cbcollect_*/completed_requests.json | sort | uniq -c
+
 # Errors and timeouts in query log
 rg -iN "timeout|error|Index not ready|GSI.*fail" \
   cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
 
-# Slow queries (elapsed > 5s) from completed_requests
-jq -r 'select(.elapsedTime != null) |
-  [.requestTime, .elapsedTime, .statement[0:100], .errors[0].msg] | @tsv' \
-  cbcollect_*/completed_requests.json 2>/dev/null | sort -k2 -rn | head -20
+# Slowest requests WITH the phase breakdown (indexScan vs fetch vs filter, plus docs fetched)
+jq -r '.results[] | [.requestTime, .elapsedTime,
+        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
+        (.phaseTimes.filter // "-"), (.phaseCounts.fetch // 0),
+        (.statement[0:80] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
 
-# Queries with errors
-jq -r 'select(.errors != null and (.errors | length) > 0) |
-  [.requestTime, .errors[0].code, .errors[0].msg] | @tsv' \
-  cbcollect_*/completed_requests.json 2>/dev/null | head -20
+# Errored requests with error code and retry flag (timeout is code 1080, key "timeout")
+jq -r '.results[] | select(.errorCount > 0) |
+       [.requestTime, .elapsedTime, .errors[0].code, .errors[0].key,
+        (.errors[0].retry|tostring)] | @tsv' \
+  cbcollect_*/completed_requests.json | head -30
 
-# Primary scans (no index)
-rg -iN '"primaryScan":[1-9]' cbcollect_*/completed_requests.json
+# Error code frequency
+jq -r '.results[].errors[]?.code' cbcollect_*/completed_requests.json | sort | uniq -c | sort -rn
+
+# Primary scans (no usable index at all)
+jq -r '.results[] | select((.phaseCounts.primaryScan // 0) > 0) |
+       [.requestTime, .elapsedTime, (.statement[0:100] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | head -20
 
 # GSI endpoint in "Index not ready" errors — identifies which node served the error
 rg -oiN 'GsiScanClient:"[^"]*"' cbcollect_*/ns_server.query.log \
   | rg "<TIMESTAMP_WINDOW>" | sort | uniq -c | sort -rn | head -20
 ```
+
+**Always compare a known-good window against the bad window, never analyze the incident window alone.** Group the offending statement's executions by day and compare `elapsedTime` alongside `phaseCounts.fetch`. If the document count grew, the cause is data growth or a widened predicate, not a cluster fault, and that changes the entire recommendation. Correlate with index size over time from `ns_server.indexer_stats.log`, which is a timestamped series (extract the `items_count` trend rather than reading one sample).
+
+**Traps that produce wrong conclusions:**
+- A duration pinned to the exact `statement_timeout` value is the timeout firing, not the operation's natural cost. Find a successful execution from a healthy window to learn the real cost.
+- `phaseCounts.fetch` on a timed-out request is only how far it got, not the full result set size.
+- GSI backfill temp files in `ns_server.query.log` are often routine and fast. Measure the create-to-remove interval per request id across several days before calling them pathological.
+- Index `items_count` is a time series; a single sample can be orders of magnitude off from the value during the incident.
 
 ---
 
@@ -234,7 +264,7 @@ rg -l "pattern" cbcollect_info_*/ns_server.debug.log
 rg -oN 'ns_1@[\w\.\-]+' cbcollect_*/ns_server.debug.log | sort -u
 
 # Error codes from query completed_requests
-jq -r '.errors[]?.code' cbcollect_*/completed_requests.json 2>/dev/null \
+jq -r '.results[].errors[]?.code' cbcollect_*/completed_requests.json \
   | sort | uniq -c | sort -rn
 
 # First and last timestamp in a log

@@ -358,7 +358,20 @@ rg -iN "Too many open connections|connection.*refuse|connection.*reset" cbcollec
 rg -iN "timeout|duration.*[0-9]{4,}" cbcollect_*/ns_server.query.log
 
 # Slow queries from completed_requests
-jq '.[] | select(.elapsedTime > "5s")' cbcollect_*/completed_requests.json
+# MANDATORY for query latency/timeout tickets. Note .results[] — the file is ONE JSON
+# object with a results array, not NDJSON and not a top-level array. A filter that omits
+# .results[] silently matches nothing, and 2>/dev/null hides that failure.
+jq -r '.results | length' cbcollect_*/completed_requests.json   # sanity check first
+jq -r '.results[] | [.requestTime, .elapsedTime,
+        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
+        (.phaseTimes.filter // "-"), (.phaseCounts.fetch // 0),
+        (.statement[0:80] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
+
+# phaseTimes tells you WHICH phase was slow (indexScan vs fetch vs filter); phaseCounts
+# tells you how many rows/docs were processed. Always compare a known-good day against
+# the bad day, and never report a value equal to the statement_timeout as a measured
+# duration (that is the timeout terminating the work, not its natural cost).
 
 # Primary scan detection
 rg -iN "UnboundedScan|PrimaryScan|_all_docs" cbcollect_*/ns_server.query.log
@@ -374,8 +387,10 @@ When the customer's primary complaint is query latency or `Index not ready for s
 rg -iN "Index not ready|GSI.*error|index.*not found|timeout" cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
 
 # Slow queries by elapsed time — identify which index names / keyspaces were involved
-jq -r 'select(.elapsedTime != null) | [.requestTime, .elapsedTime, .statement[0:120], .errors[0].msg] | @tsv' \
-  cbcollect_*/completed_requests.json 2>/dev/null | sort -k2 -rn | head -30
+jq -r '.results[] | [.requestTime, .elapsedTime,
+        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
+        (.phaseCounts.fetch // 0), (.statement[0:100] | gsub("\n";" "))] | @tsv' \
+  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
 
 # Count "Index not ready" errors per index name
 rg -oiN 'Index not ready.*index [^ ]+' cbcollect_*/ns_server.query.log | sort | uniq -c | sort -rn | head -20
