@@ -337,6 +337,8 @@ The docs expert will search docs.couchbase.com, issues.couchbase.com (via Jira R
 
 **ALWAYS delegate deep documentation research to the docs expert** - don't make assumptions or use general knowledge.
 
+**Batch, don't fragment.** If a ticket raises several documentation questions, put them all in ONE invocation as a numbered list, not one invocation per question — the agent can search and answer several sub-questions in a single pass. Each extra invocation re-pays the full system-prompt and tool-schema cost for no analytical benefit. Reserve a second invocation for when the first one's answer genuinely opens a new, unrelated question you couldn't have anticipated up front.
+
 **If docs expert finds no documentation:**
 - State "No official documentation found for this behavior"
 - Mark as "Unknown - requires investigation"
@@ -355,7 +357,9 @@ When documentation is absent or a log message/behavior needs to be confirmed at 
 
 **Always include the CBS/SDK version in your prompt to source expert** — it must read code at the exact git tag matching the customer's version, not `main`.
 
-Example queries:
+**One consolidated call per ticket, not one per sub-question.** If you need the source expert to check a timer interval AND a version diff AND an error definition, ask for all of it in a single prompt — the agent can read multiple files and compare multiple tags in one pass. Spawning a separate agent per question multiplies fixed overhead (system prompt, GitHub auth, repo resolution) without adding coverage. Only make a second call if the first call's findings open a genuinely new investigation thread you couldn't have scoped upfront (e.g., it surfaces a fix commit in a different repo that now needs its own check).
+
+Example queries — combine several of these into one prompt when they apply to the same ticket:
 - "Find the cb_creds_rotation timer interval and what triggers a password rotation in couchbase/ns_server. CBS version: 7.6.10"
 - "Find where ENDPOINT_NOT_AVAILABLE is defined and what sets it in couchbase/couchbase-jvm-clients. SDK version: 3.6.2"
 - "Find the default checkpoint_interval value in couchbase/goxdcr. CBS version: 7.2.6"

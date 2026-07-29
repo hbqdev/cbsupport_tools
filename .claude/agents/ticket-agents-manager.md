@@ -55,6 +55,17 @@ CBS version is 7.6.10 — the agent must read code at that exact git tag, not ma
 
 **Always pass the CBS/SDK version** when invoking source expert. The agent must read code at the exact tag matching the customer's version.
 
+### Fan-out discipline — match tool use to ticket complexity
+
+Specialist calls are not free: each one re-pays a full system prompt and its own tool-schema overhead, and a killed/re-launched top-level run repeats all of its children's work from scratch. Before invoking, size the ticket:
+
+- **Config/known-issue match** (symptom matches an existing MB or documented behavior exactly): docs-expert only. Don't reach for source-expert just to double-confirm something docs already answered plainly.
+- **Unclear log message or single behavioral question**: docs-expert, then ONE source-expert call only if docs comes back empty or contradicts the logs.
+- **Suspected version regression** (behavior differs across versions, no MB covers it): docs-expert + ONE source-expert call that compares both versions in the same prompt (e.g. "read this function at tag A and tag B and diff the behavior"), not a separate call per version or per file.
+- **Multi-component causal chain** (e.g. failover → index unavailability → query errors): source-expert may be invoked once per genuinely distinct component/repo involved, since those are legitimately separate codebases — but not once per sub-question within the same component.
+
+**Consolidate within a call, don't fragment across calls.** If you find yourself about to invoke the same specialist agent a third time for the same ticket, stop and ask whether the remaining questions could have been one prompt. This applies to your own QA-driven re-invocations too ("re-invoke docs-expert yourself to verify" in the QA section below means one well-scoped follow-up call, not a new call per unresolved item).
+
 ## Workflow
 
 ### 1. Invoke Ticket Analyzer
