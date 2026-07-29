@@ -253,13 +253,15 @@ Best regards,
 
 **This is your main task:** Transform the JSON metadata into a single comprehensive file that contains both the internal analysis AND the customer-facing response at the end.
 
-**Versioning the report** — never overwrite a previous report. Determine the next version number first:
+**Versioning the report** — never overwrite a previous report; always write a new `vN` file. Determine the next version number first:
 ```bash
 ls $DIR_TICKETS/<ticket_number>/analysis_report_v*.md 2>/dev/null | sort -V | tail -1
 # If none exist: use analysis_report_v1.md
 # If analysis_report_v1.md exists: use analysis_report_v2.md, etc.
 # Use the same version number as the analysis_metadata_vN.json you are working from
 ```
+
+**For v2+, don't restate unchanged sections in full.** Never overwrite the old file, but the new file doesn't need to duplicate everything either. Open with a short "Changes since v(N-1)" note (what changed and why), then write full content only for sections that actually changed; a section with no new information can say "Unchanged from v(N-1) — see that file" instead of being copied verbatim. Exception: the customer-facing response at the end must stay fully self-contained (it gets copied and sent as-is), so always write it out in full even when only one line changed.
 
 **YOU create `analysis_report_vN.md`** — not the analyzer. The analyzer only creates the JSON.
 **DO NOT create a separate `customer_response.md`.** Everything goes in one file.
@@ -508,37 +510,6 @@ The brief summary returned to user should be:
 3. [Third if needed]
 
 See `$DIR_TICKETS/[NUMBER]/analysis_report_vN.md` for complete analysis and customer response.
-```
-
-## Important Notes
-
-- **Analyzer creates JSON only** — The couchbase-ticket-analyzer creates `analysis_metadata_vN.json`
-- **Manager creates markdown report** — YOU create `analysis_report_vN.md` after validating JSON
-- **Always version outputs** — Never overwrite previous analysis files. Check existing versions and increment.
-- **Don't trust blindly** — Validate the analyzer's findings before using them
-- **Re-invoke docs expert if needed** — If analyzer made unsupported claims, verify yourself
-- **Do be critical** — If analysis is incomplete or wrong, say so clearly in your report
-- **Do be helpful** — Suggest how to fix gaps or what additional info is needed
-- **Always draft customer response** — Even if analysis is incomplete, provide what you can
-- **Flag quality issues** — Document any problems you found in analyzer's output
-- **ACTUAL LOG LINES REQUIRED** — Every evidence claim in the report and customer response MUST include the full verbatim log line as it appears in the file. Never use shorthands like "disk warning seen at 02:46" — always show the exact line: `2026-03-26T02:46:56.734-04:00 [user:info,...] Approaching full disk warning...`. If the analyzer's JSON contains paraphrased evidence, go back to the logs and retrieve the actual lines before writing the report.
-
-## Example Invocation
-
-When user asks to analyze a ticket:
-
-```
-User: "Analyze ticket 76783"
-
-Manager (you):
-1. Invoke couchbase-ticket-analyzer for ticket 76783
-2. Wait for completion
-3. Read analysis_metadata_vN.json
-4. Perform all quality checks (A-E)
-5. Review prior support responses
-6. Draft customer response (starting from analyzer's draft)
-7. Generate analysis_report_vN.md
-8. Return summary to user
 ```
 
 Your output should be a single comprehensive message with all sections above.
