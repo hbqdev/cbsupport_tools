@@ -369,152 +369,12 @@ The source expert will search GitHub (github.com/couchbase, github.com/couchbase
 
 **Use ±2 minute window around issue timestamp** (extend only if customer indicates prolonged issue).
 
-**A. Server-side logs (cbcollect)**
+**A. Server-side logs (cbcollect)** — the skill file (already loaded per "Log Search Skill" above) has the exact `rg`/`jq` commands and step-by-step workflows for every component. The mandates below are hard requirements; follow the skill file for the commands themselves rather than improvising:
 
-Use ripgrep (rg) with timestamp-aware searches for each component:
-
-**KV issues (memcached.log):**
-```bash
-# OOM detection
-rg -iN "OOM|resident_ratio|high_wat|evict" cbcollect_*/memcached.log | rg "2024-03-19 14:2[123]:"
-
-# DCP issues
-rg -iN "DCP|BufferLogFull|stream.*fail|connection.*close" cbcollect_*/memcached.log
-
-# Connection issues
-rg -iN "Too many open connections|connection.*refuse|connection.*reset" cbcollect_*/memcached.log
-```
-
-**Query issues (ns_server.query.log, completed_requests.json):**
-
-⛔ **For any query latency or query timeout ticket, `completed_requests.json` is MANDATORY, not optional.** It is the only source of real per-phase timings (`phaseTimes`) and per-phase row counts (`phaseCounts`), which is what distinguishes an index-scan problem from a KV-fetch problem from a post-fetch-filter problem. A root cause built only from `ns_server.query.log` will produce guesses about magnitude that the phase data contradicts. See the "Query performance workflow" in the log-analysis skill and follow all five steps.
-
-**Note the file structure**: it is one JSON object with a `results` array, NOT NDJSON and NOT a top-level array. Every jq filter must start from `.results[]`, otherwise it silently matches nothing (and `2>/dev/null` hides the failure).
-
-```bash
-# Sanity check FIRST: entry count and date coverage
-jq -r '.results | length' cbcollect_*/completed_requests.json
-jq -r '.results[].requestTime[0:10]' cbcollect_*/completed_requests.json | sort | uniq -c
-
-# Timeout detection in the query log
-rg -iN "timeout|duration.*[0-9]{4,}" cbcollect_*/ns_server.query.log
-
-# Slowest requests WITH the phase breakdown and documents fetched
-jq -r '.results[] | [.requestTime, .elapsedTime,
-        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
-        (.phaseTimes.filter // "-"), (.phaseCounts.fetch // 0),
-        (.statement[0:80] | gsub("\n";" "))] | @tsv' \
-  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
-
-# Errored requests with code and retry flag (timeout is code 1080)
-jq -r '.results[] | select(.errorCount > 0) |
-       [.requestTime, .elapsedTime, .errors[0].code, .errors[0].key,
-        (.errors[0].retry|tostring)] | @tsv' \
-  cbcollect_*/completed_requests.json | head -30
-
-# Primary scan detection (no usable index at all)
-jq -r '.results[] | select((.phaseCounts.primaryScan // 0) > 0) |
-       [.requestTime, .elapsedTime, (.statement[0:100] | gsub("\n";" "))] | @tsv' \
-  cbcollect_*/completed_requests.json | head -20
-rg -iN "UnboundedScan|PrimaryScan|_all_docs" cbcollect_*/ns_server.query.log
-```
-
-**Always profile a known-good window and compare it against the failing window.** Group the offending statement's executions by day and compare `elapsedTime` alongside `phaseCounts.fetch`. If the document count grew, the cause is data growth or a widened predicate rather than a cluster fault, which changes the entire recommendation. Correlate with the `items_count` trend from `ns_server.indexer_stats.log` (a timestamped series, so extract the trend, never a single sample).
-
-**Do not report a timeout value as a measured duration.** If durations land on exactly the configured timeout (for example 3.000s against a 3s `statement_timeout`), the work was terminated mid-flight. Find a successful execution from a healthy window to establish the real cost. Likewise `phaseCounts.fetch` on a timed-out request is only how far it got, not the full result set size.
-
-**Index issues (ns_server.indexer.log) — and for any query latency complaint, ALWAYS analyze indexer.log:**
-
-When the customer's primary complaint is query latency or `Index not ready for serving queries` errors, you MUST do all of the following — not just check for memory warnings:
-
-**Step 1 — Identify impacted queries from query.log and completed_requests.json:**
-```bash
-# Find all slow/errored queries during the incident window
-rg -iN "Index not ready|GSI.*error|index.*not found|timeout" cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
-
-# Slow queries by elapsed time — identify which index names / keyspaces were involved
-# (note .results[] — the file is an object with a results array, not a top-level array)
-jq -r '.results[] | [.requestTime, .elapsedTime,
-        (.phaseTimes.indexScan // "-"), (.phaseTimes.fetch // "-"),
-        (.phaseCounts.fetch // 0), (.statement[0:100] | gsub("\n";" "))] | @tsv' \
-  cbcollect_*/completed_requests.json | sort -t$'\t' -k2 -hr | head -30
-
-# Count "Index not ready" errors per index name
-rg -oiN 'Index not ready.*index [^ ]+' cbcollect_*/ns_server.query.log | sort | uniq -c | sort -rn | head -20
-```
-
-**Step 2 — Check index state on each Query/Index node during the window:**
-```bash
-# Index state transitions (ready → warmup → building → etc.)
-rg -iN "Index.*state.*change|indexState|index.*warming|index.*ready|index.*building" cbcollect_*/ns_server.indexer.log | rg "<TIMESTAMP_WINDOW>"
-
-# Index not ready / scan errors from the indexer's perspective
-rg -iN "not ready|ErrIndexNotReady|ErrScanTimedOut|scan.*fail" cbcollect_*/ns_server.indexer.log | rg "<TIMESTAMP_WINDOW>"
-
-# Index load/recovery events after node rejoin
-rg -iN "loading index|recovery|bootstrap|recoveringIndex|indexer.*start" cbcollect_*/ns_server.indexer.log | rg "<±5 minute window>"
-```
-
-**Step 3 — Check replica index availability on surviving nodes:**
-```bash
-# On each non-failed node: were replica indexes in ready state?
-rg -iN "replica|numReplica|replicaId" cbcollect_*/ns_server.indexer.log | rg "<TIMESTAMP_WINDOW>"
-
-# Check if GSI scan client attempted retry against replica
-rg -iN "Trying scan again with replica|retry.*replica|replica.*retry" cbcollect_*/ns_server.query.log | rg "<TIMESTAMP_WINDOW>"
-
-# Check if replica was actually available (not in warmup)
-rg -iN "Index not ready for serving queries" cbcollect_*/ns_server.query.log | rg -oE '"[^"]*:[0-9]+"' | sort | uniq -c | sort -rn
-# This shows which GSI endpoint (host:port) was serving the error — compare against failed/recovering nodes
-```
-
-**Step 4 — Explain the GSI retry decision:**
-After checking Steps 2 and 3, explicitly answer:
-- Were replica indexes defined? (check ns_server.indexer.log or `curl http://node:9102/getIndexStatus` output if present)
-- Were replicas on surviving nodes in `ready` state during the incident window?
-- If replicas were ready but GSI still failed: note the GSI scan client endpoint in the error and explain which node it maps to
-- If no replicas: state this is the gap — single point of failure on each index
-
-```bash
-# General index health / memory
-rg -iN "memory.*warning|memory_quota.*exceed|plasma.*memory" cbcollect_*/ns_server.indexer.log
-rg -iN "build.*fail|build.*error|panic|fatal" cbcollect_*/ns_server.indexer.log
-```
-
-**Cluster issues (ns_server logs):**
-
-**MANDATORY for any cluster/failover/node-down issue: always search BOTH `ns_server.info.log` AND `ns_server.debug.log`.** The debug log contains critical process-level signals (NACK messages, gen_server overload, process exits, mailbox pressure) that do NOT appear in the info log and are essential for root cause analysis.
-
-```bash
-# Failover detection (info + debug)
-rg -iN "failover|auto_failover|node.*down|rebalance.*fail" cbcollect_*/ns_server.info.log cbcollect_*/ns_server.debug.log
-
-# Process overload / async NACK (debug log only - critical for stall diagnosis)
-rg -N "Received nack\|register_with_async\|message_queue_len\|overloaded\|noproc\|noconnection" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
-
-# Process exits / supervisor restarts (debug log)
-rg -N "EXIT\|process_died\|child.*terminated\|supervisor.*restarting" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
-
-# ns_config writes during issue window (debug log)
-rg -N "ns_config\|config_update\|set_kvlist" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
-
-# gen_server call timeouts / rejections (debug log)
-rg -N "gen_server.*timeout\|call.*timeout\|handle_call.*timeout" cbcollect_*/ns_server.debug.log | rg "<TIMESTAMP_WINDOW>"
-
-# Disk/memory issues
-rg -iN "disk.*full|disk_usage|memory.*high|disk.*watermark" cbcollect_*/ns_server.info.log cbcollect_*/ns_server.debug.log
-```
-
-**Key debug-only signals to always check for cluster/stall issues:**
-- `async:register_with_async: Received nack` — process mailbox full or process overloaded/not responding
-- `message_queue_len` spikes — process falling behind on message processing
-- Supervisor restart chains — cascading process failures
-- `ns_config` write bursts — config thrashing can block the config server process
-
-For multi-node clusters:
-- Search each node's logs separately
-- Compare: node-specific vs cluster-wide issues
-- Identify which node triggered the issue
+- ⛔ **Query latency/timeout tickets**: `completed_requests.json` analysis is MANDATORY, not optional — it's the only source of real per-phase timings (`phaseTimes`) and row counts (`phaseCounts`), which is what distinguishes an index-scan problem from a KV-fetch problem from a post-fetch-filter problem. Follow the skill's "Query performance workflow" (all five steps, including comparing a known-good day against the bad day) and watch for its "Traps" section (timeout values reported as real durations, `phaseCounts.fetch` on a timed-out request treated as the full result size). Remember `completed_requests.json` is one object with a `results` array, not NDJSON — every `jq` filter starts from `.results[]`.
+- ⛔ **Query latency or "Index not ready" tickets**: analyze `ns_server.indexer.log` using all four steps in the skill's "Index" section (impacted queries + GSI endpoint → index state transitions → replica availability → explain the retry decision). Don't stop at a memory-warning check.
+- ⛔ **Any cluster/failover/node-down ticket**: always search BOTH `ns_server.info.log` AND `ns_server.debug.log`. The debug log carries NACK messages, gen_server overload, process exits, and mailbox pressure that never appear in the info log.
+- For multi-node clusters, search each node's logs separately and identify which node triggered the issue vs. which just observed it.
 
 **B. Client-side logs (ticket_files)**
 
@@ -691,7 +551,7 @@ Create `$DIR_TICKETS/<ticket_number>/analysis_metadata_vN.json`:
 
   "customer_response_draft": {
     "subject": "Re: [Ticket Subject]",
-    "body": "Hi [Customer Name],\n\nThank you for reaching out to Couchbase Support.\n\n**Summary**\n[One or two sentences summarizing what was found.]\n\n**Root Cause**\n[Clear, customer-friendly explanation of the root cause. Avoid excessive jargon. Include the key verbatim log line(s) that confirm the finding.]\n\n**Recommendations**\n1. [Immediate action with specifics]\n2. [Next step]\n3. [Long-term prevention if applicable]\n\n**Next Steps**\n[What support will do next, or what the customer should do.]\n\nPlease let us know if you have any questions.\n\nBest regards,\n[Your name]\nCouchbase Support"
+    "body": "<full customer-facing letter: summary, root cause in plain language with the key verbatim log line(s), numbered recommendations, next steps — see the manager's response template for the expected structure. Must be fully written, not a placeholder.>"
   }
 }
 ```
@@ -713,17 +573,6 @@ combined report (analysis_report_vN.md with customer response at the end).
 **⛔ `customer_response_draft` is MANDATORY** — every `analysis_metadata_vN.json` must contain a fully written `customer_response_draft.body`. A template placeholder is not acceptable. Write the actual response based on your findings.
 
 **DO NOT create `analysis_report_vN.md` or `customer_response.md`** — that's the manager's job after validation.
-
-## Quality Standards
-
-- **Show your work**: Document every step of analysis
-- **Evidence-based**: Cite specific log excerpts with exact timestamps
-- **Timestamp accuracy**: Use exact timestamps, never vague time references
-- **Actionable**: Provide specific commands/settings, not generic advice
-- **Cross-reference**: Verify findings across multiple sources
-- **CITE ALL SOURCES**: Every claim about expected behavior MUST cite documentation URL
-- **No assumptions**: If unsure, state "Unknown - requires investigation" — never guess
-- **Consult docs expert**: For any behavioral claims, invoke couchbase-docs-expert first
 
 ## Error Handling
 

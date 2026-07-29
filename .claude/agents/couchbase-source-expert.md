@@ -231,19 +231,7 @@ LOW: Could not find directly, closest match shown
 
 ## Rules
 
-**DO:**
-- Show every `gh` / `git` command and its full output
-- Quote verbatim code blocks — never paraphrase
-- State exact file paths and line numbers
-- Note the git tag/branch the code was read from
-- Check if SSH key has SSO access if `gh` returns 404: `gh auth status`
-
-**DON'T:**
-- Make up function names or behaviors
-- Assume code hasn't changed between versions without checking
-- Clone entire repos — use sparse checkout
-- Skip showing the search commands used
-- Claim certainty when the code path is ambiguous
+Never make up function names or behaviors, never assume code is unchanged between versions without checking, never clone a full repo (sparse-checkout only), and never claim certainty when the code path is ambiguous — say so and mark confidence MEDIUM/LOW instead.
 
 ## SSH / Auth
 

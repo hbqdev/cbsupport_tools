@@ -239,67 +239,11 @@ For each query:
    LOW: Limited information, community discussion only
    ```
 
-## Common Search Patterns
+## Version Handling Recap
 
-### Error Messages
-```
-Query: "What does 'OOM resident_ratio=0.95' mean?"
-
-Searches:
-1. "couchbase OOM resident_ratio memcached" site:docs.couchbase.com
-2. "OOM resident_ratio" site:issues.couchbase.com
-3. "out of memory resident ratio couchbase" site:support.couchbase.com
-```
-
-### Feature Behavior
-```
-Query: "How does DCP buffer management work?"
-
-Searches:
-1. "couchbase DCP buffer architecture" site:docs.couchbase.com
-2. "DCP BufferLogFull" site:docs.couchbase.com
-3. "DCP buffer tuning" site:support.couchbase.com
-```
-
-### Known Issues
-```
-Query: "Are there known issues with index memory in 7.6.3?"
-
-Do NOT run an unscoped web search like "index memory" site:issues.couchbase.com "7.6.3" as
-the primary approach — that's exactly the noisy, unfocused pattern to avoid. Use the Jira
-REST API instead, scoped to version and component:
-
-JQL="project=MB AND affectedVersion=\"7.6.3\" AND component=\"secondary-index\" AND text~\"memory\" ORDER BY updated DESC"
-
-Only fall back to the web search variants below if the Jira API call itself fails:
-1. "index memory" site:issues.couchbase.com "7.6.3"
-2. "indexer memory quota" site:issues.couchbase.com "affects version 7.6"
-3. "index OOM 7.6" site:docs.couchbase.com
-```
-
-### Configuration
-```
-Query: "What's the recommended memory quota for query service?"
-
-Searches:
-1. "query service memory quota sizing" site:docs.couchbase.com
-2. "query memory allocation best practices" site:support.couchbase.com
-3. "query service memory" site:docs.couchbase.com "production"
-```
-
-## Version Handling
-
-This is not optional guidance, it's a precondition for every Jira search:
-- Never run a Jira search (MB or an SDK project) without an exact `affectedVersion` filter. If the caller didn't give you a version, ask for it before searching, the same way couchbase-source-expert refuses to read code at `main` without a resolved tag.
-- Scope by `component` whenever the symptom maps to one (see the Component → Jira component map above). A version filter alone still searches the entire component surface of a huge project.
-- If the issue involves a specific SDK and version (e.g. "Java SDK 3.11.2"), search that SDK's own Jira project with its own `affectedVersion` filter, in addition to or instead of `MB`, depending on where the symptom actually originates. Do not assume every ticket is a server-side (`MB`) issue just because it surfaced in server logs.
-- Check both `affectedVersion` and `fixVersion`: if a bug's `fixVersion` is a release the customer is already on or past, it is not the cause, say so explicitly rather than presenting it as still-relevant.
-- Indicate whether information applies to all versions or specific ones, and note version differences if they exist.
-
-Example:
-```
-"In Couchbase 7.6.3, index snapshots use [behavior]. This changed from 7.2 where [old behavior]."
-```
+Two checks that are easy to skip under time pressure, restated because they change the verdict, not just the phrasing:
+- Check both `affectedVersion` and `fixVersion`. If a bug's `fixVersion` is a release the customer is already on or past, it is not the cause — say so explicitly rather than presenting it as still-relevant.
+- Note explicitly whether a finding applies to all versions or a specific range (e.g. "In 7.6.3, index snapshots use X; this changed from 7.2 where Y").
 
 ## Response Guidelines
 
@@ -320,9 +264,8 @@ Example:
 - Skip citing sources
 - Claim certainty when information is limited
 
-## Example Queries and Responses
+## Example Response
 
-### Query 1: Error Explanation
 ```
 Input: "What causes 'WARNING DCP (Producer) ... BufferLogFull' in memcached.log?"
 
@@ -330,62 +273,19 @@ Response:
 ## DCP BufferLogFull Warning
 
 ### Official Documentation
-DCP (Database Change Protocol) BufferLogFull warnings indicate that the DCP producer's buffer is full and cannot accept new mutations. This occurs when the DCP consumer (replica, XDCR, or index) cannot keep up with the mutation rate.
-
+BufferLogFull indicates the DCP producer's buffer is full and cannot accept new mutations,
+because the consumer (replica, XDCR, or index) cannot keep up with the mutation rate.
 **Source**: https://docs.couchbase.com/server/7.6/learn/clusters-and-availability/dcp.html
 
-### Common Causes
-1. Slow consumer (network latency, disk I/O issues)
-2. Large mutations causing buffer pressure
-3. Insufficient DCP buffer allocation
-4. Consumer node overloaded
-
-**Source**: https://docs.couchbase.com/server/7.6/manage/troubleshoot/common-errors.html#dcp-buffer-full
-
 ### Known Issues
-- **MB-45678**: DCP buffer size calculation incorrect in 7.6.0-7.6.2
-  - Affects: 7.6.0, 7.6.1, 7.6.2
-  - Fixed in: 7.6.3
-  - Status: RESOLVED
-  - **Source**: https://issues.couchbase.com/browse/MB-45678
+- **MB-45678**: DCP buffer size calculation incorrect. Affects 7.6.0-7.6.2, fixed in 7.6.3, RESOLVED.
+  **Source**: https://issues.couchbase.com/browse/MB-45678
 
 ### Recommendations
 1. Check consumer lag: `cbstats <host>:11210 dcp`
 2. Increase DCP buffer if needed: Set `dcp_buffer_size`
-3. Investigate consumer node performance
 
 **Confidence**: HIGH - Multiple authoritative sources
-```
-
-### Query 2: Feature Behavior
-```
-Input: "How does query service determine memory usage limits?"
-
-Response:
-## Query Service Memory Management
-
-### Official Documentation
-The Query service uses a memory quota that limits the total memory available for query execution. The quota is set during cluster initialization or can be adjusted in Settings > Cluster.
-
-Default: 256 MB minimum, recommended 4GB+ for production
-
-**Source**: https://docs.couchbase.com/server/7.6/learn/services-and-indexes/services/query-service.html#memory-quota
-
-### Memory Allocation
-- Each query gets a portion based on complexity
-- Exceeded quota triggers "Memory quota exceeded" error
-- Temporary working memory separate from result cache
-
-**Source**: https://docs.couchbase.com/server/7.6/n1ql/n1ql-language-reference/memoryquota.html
-
-### Best Practices
-- Production: 4GB minimum, 8GB+ recommended
-- Size based on concurrent queries and dataset
-- Monitor with system:completed_requests
-
-**Source**: https://support.couchbase.com/hc/en-us/articles/query-service-sizing
-
-**Confidence**: HIGH - Official documentation
 ```
 
 ## Search Tools
