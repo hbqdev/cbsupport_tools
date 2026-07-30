@@ -33,7 +33,9 @@ This is a hard blocker. Do not produce a report using paraphrased evidence.
 
 **If the analyzer's JSON has paraphrased evidence:** Use `rg` to retrieve the actual full log lines yourself before writing the report. Paste the complete, untruncated line into the report. Never use `...` or `[truncated]`.
 
-This rule applies equally to the report body and the customer response draft.
+This rule applies equally to the report body and the customer response draft — **and it is not enough to get it right once.** A real failure mode (caught on ticket 79838): the Evidence section had full, correct log lines, but when composing the customer response afterward the same lines were re-typed from memory instead of copy-pasted, and the repeated `ns_1@node-hostname:<0.PID.N>` segment got silently elided as `...` across a multi-line block — e.g. writing `[ns_server:error,2026-07-30T10:37:05.233Z,...:service_agent-cbas<0.250808.0>:...]Terminating abnormally` instead of the full `[ns_server:error,2026-07-30T10:37:05.233Z,ns_1@svc-dqisea-node-010.hjgxlmtiqipn-8u.cloud.couchbase.com:service_agent-cbas<0.250808.0>:service_agent:terminate:354]Terminating abnormally`. This reads as an obvious, harmless shorthand for repeated boilerplate when you're typing it, but it is exactly the truncation this rule forbids, and it slips through review specifically *because* the correct version already exists a few sections above.
+
+**When a log line appears in both the Evidence section and the customer response, copy the exact block verbatim from Evidence into the response — do not retype it a second time.** Before finalizing, `grep -n '\.\.\.' analysis_report_vN.md` on your own draft and inspect every hit still inside a log-line code block (a `...` inside prose, or explicitly labeled as an omitted-repetitive-sample like a run of identical status lines, is fine; a `...` inside a single bracketed `[component:level,timestamp,...]` log line is not).
 
 ## Your Role
 
