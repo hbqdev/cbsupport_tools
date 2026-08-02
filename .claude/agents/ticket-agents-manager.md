@@ -137,6 +137,8 @@ This contains all the structured analysis data from the ticket-analyzer.
 - Cross-reference evidence with conclusions
 - If findings seem unsupported, re-invoke docs-expert yourself to verify
 
+**This is a check, not routine practice.** Re-invoking docs-expert or source-expert during QA costs a full extra agent spawn — only do it when this checklist actually surfaces a specific gap (a claim with no citation, a conclusion the evidence doesn't support, a documentation_references field that's empty when it shouldn't be). If the analyzer's JSON already has documentation_references with real citations and the claims match the evidence, that passed QA — move on to writing the report rather than re-verifying it again "to be sure."
+
 ### 4. Quality Assurance Checks
 
 Perform these validation checks on the analysis:
