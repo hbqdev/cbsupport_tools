@@ -203,19 +203,27 @@ Never claim to have analyzed logs if cbcollect directories don't exist.
 
 ## Log Search Skill
 
-Before starting any log search, read the expert `rg` pattern reference:
+The reference file is `$(git rev-parse --show-toplevel)/.claude/skills/couchbase-log-analysis/SKILL.md`. **Don't `cat` the whole file — it's a full multi-component reference and most tickets only touch one or two components.** Read only what this ticket needs:
 
+**Always read first (small, universal — Log File Reference through Quick Triage, ~85 lines):**
 ```bash
-cat $(git rev-parse --show-toplevel)/.claude/skills/couchbase-log-analysis/SKILL.md
+SKILL=$(git rev-parse --show-toplevel)/.claude/skills/couchbase-log-analysis/SKILL.md
+sed -n '/^## Log File Reference/,/^## KV Engine/p' "$SKILL" | sed '$d'
 ```
 
-This skill file contains:
-- Correct log filenames with `ns_server.*` prefix for every component
-- Timestamp filter patterns for precise window searches
-- Expert `rg` one-liners for KV, Query, Index, Cluster, XDCR, FTS logs
-- Multi-node count patterns and cross-component correlation workflows
+**Then read only the section(s) matching the ticket's component(s)** (see the component table below for how symptoms map to a section — e.g. a query-latency ticket needs only `Query`, and possibly `Index` if it also involves "Index not ready"):
+```bash
+# e.g. a Query-only ticket:
+sed -n '/^## Query (/,/^## /p' "$SKILL" | sed '$d'
+```
+The same pattern works for any section: `KV Engine`, `Cluster Management`, `Index`, `XDCR`, `FTS`, `Views`, `Eventing`, `couchbase.log`, `Couchbase Autonomous Operator`. Read more than one section if the ticket genuinely spans components (e.g. a failover that produced query errors needs both `Cluster Management` and `Query`) — the point is reading what's relevant, not minimizing at the cost of missing a needed pattern.
 
-Use the patterns from the skill as the starting point for all searches. Do not invent ad-hoc patterns when the skill already provides them.
+**Read on demand, only if applicable to this ticket:**
+- `tshark Patterns` — only if a pcap/pcap.gz file is present (RULE #3)
+- `StatsMgr Rate Calculations` — only if the customer reports ops/s or mutation rates
+- `Multi-Node Patterns` — only for multi-node clusters where you need node-vs-cluster-wide comparison
+
+Use the patterns from the skill as the starting point for all searches; do not invent ad-hoc patterns when the skill already provides them.
 
 ## Analysis Workflow
 
