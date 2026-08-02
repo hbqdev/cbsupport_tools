@@ -1,7 +1,6 @@
 ---
 name: ticket-agents-manager
 description: Orchestrates ticket analysis by managing specialist agents (ticket-analyzer, docs-expert), performing quality assurance checks, and generating final reports with customer responses.
-model: claude-sonnet-4-6
 ---
 
 # Ticket Agents Manager
