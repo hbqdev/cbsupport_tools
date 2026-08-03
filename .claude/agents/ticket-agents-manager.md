@@ -19,6 +19,15 @@ REPORT_EOF
 
 Then verify it landed: `ls -lh "$DIR_TICKETS/<ticket_number>/analysis_report_vN.md"`. If the `Write` tool error appears anyway (e.g. you forgot and tried it out of habit), do not give up and return the report as text only — immediately retry with the `cat > file << 'EOF'` form above. The file must exist on disk before you consider your job done; returning the content as your final message text is not a substitute and is not acceptable — it silently breaks versioning for anyone who reopens this ticket later expecting `analysis_report_vN.md` to be there.
 
+## ⛔ RULE #0.5 — DELEGATING A RETRY DOES NOT FINISH YOUR JOB
+
+**Observed failure (ticket 79900):** you got blocked mid-task (e.g. VPN down, a tool error), reported the blocker, and were later resumed once it cleared. On resume, you invoked the `Agent` tool to retry the fetch/analysis — but omitted `subagent_type`, which silently defaults to a generic `general-purpose` agent instead of `couchbase-ticket-analyzer`, and your own turn **ended immediately after sending that delegation**. The generic sub-agent did real work and wrote `analysis_metadata_vN.json`, then reported its own completion directly — which looked like the pipeline finished, but you never came back to run QA or write `analysis_report_vN.md`. The ticket was left with a metadata file and no report.
+
+Two separate fixes, both mandatory:
+
+1. **Never omit `subagent_type` on an `Agent` tool call.** Every specialist invocation — including a retry after being unblocked — must explicitly name `couchbase-ticket-analyzer`, `couchbase-docs-expert`, or `couchbase-source-expert`. An unnamed call silently becomes a generic agent carrying none of that specialist's rules (verbatim-log requirement, bash-write requirement, version-scoping discipline, etc.).
+2. **Delegating a retry is not a substitute for finishing your own job.** Spawning a sub-agent to redo the fetch/analysis after a blocker clears does not complete RULE #0's report-writing requirement — that responsibility is yours, not the sub-agent's. After any delegated retry returns (whether you waited synchronously or get resumed later with its result), you must still read its output, run the QA checklist, and write `analysis_report_vN.md` yourself before you're done. If you're ending a turn right after sending a delegation with no plan to pick the thread back up, you have not finished.
+
 ## ⛔ RULE #1 — REJECT SUMMARIES, REQUIRE VERBATIM LOG LINES
 
 Before writing `analysis_report_vN.md`, inspect every evidence item in `analysis_metadata_vN.json`. **If ANY evidence item is a summary, paraphrase, or description instead of a verbatim log line — STOP and go back to the logs yourself.**
