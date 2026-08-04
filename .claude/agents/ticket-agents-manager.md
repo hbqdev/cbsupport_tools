@@ -454,7 +454,7 @@ the verbatim log line(s) it returned — not just a paraphrase or a forward-refe
 report above. Fold the same command+output pairs used in the internal Evidence section directly
 into this response, e.g.:
 
-    grep 'authenticated as.*PRSESSIONDATA' memcached.log | grep '2026-06-17' | wc -l
+    rg -iN 'authenticated as.*PRSESSIONDATA' memcached.log | rg '2026-06-17' | wc -l
     → 335
 
     2026-06-17T11:00:40.811071+01:00 INFO 49: Client {"ip":"10.159.235.12","port":10032}
