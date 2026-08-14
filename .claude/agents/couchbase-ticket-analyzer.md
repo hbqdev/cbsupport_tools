@@ -89,6 +89,10 @@ This applies to:
 # Calculation: (2668928095 - 2668921153) ÷ 1.000s = 6,942 mut/s
 ```
 
+## ⛔ RULE #3.5 — `source .env` DOES NOT PERSIST ACROSS SEPARATE BASH CALLS
+
+Shell state (env vars) resets between Bash tool calls in this harness. If you run `source .env` in one call and then reference `$DIR_TICKETS` in a later, separate call, it will be empty — any `ls`/`cat`/`cd` against it silently matches nothing (especially with `2>/dev/null`), which can make you wrongly conclude a file or directory doesn't exist. This already caused a real incident: on ticket 79506, a manager agent's versioning check silently found no existing `analysis_report_v1.md` (because `$DIR_TICKETS` was empty in that call) and overwrote it instead of writing `v2`. **Always chain `source .env &&` into the exact same command as any use of `$DIR_TICKETS`, every time** — do not rely on having sourced it earlier in the conversation.
+
 ## ⛔ RULE #3 — ANALYZE PCAP FILES WITH TSHARK
 
 If a ticket includes pcap or pcap.gz files (tcpdump captures), you **MUST** analyze them with `tshark`. Do not skip pcap analysis.
@@ -107,7 +111,10 @@ cat $(git rev-parse --show-toplevel)/.claude/skills/couchbase-log-analysis/SKILL
 
 ### Check What Is Already Downloaded
 
+Run this as one command (see RULE #3.5 above — `$DIR_TICKETS` is empty unless `.env` is sourced in this exact call):
+
 ```bash
+source .env
 # Check cbcollect directories
 ls $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null || ls $DIR_TICKETS/<ticket_number>/*cbcollect 2>/dev/null
 
@@ -135,11 +142,9 @@ source .env
 
 This script fetches ticket metadata, downloads ALL nodes from ALL snapshots in parallel, downloads ticket_files, and extracts all zip archives automatically.
 
-**Verify completion:**
+**Verify completion** (⛔ shell env vars do NOT persist across separate Bash tool calls in this harness — `source .env` above will not carry `$DIR_TICKETS` into a later call, so re-source it in the same command here):
 ```bash
-CBCOLLECT_COUNT=$(ls -d $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null | wc -l)
-echo "Downloaded $CBCOLLECT_COUNT cbcollect nodes"
-ls $DIR_TICKETS/<ticket_number>/ticket_files/ 2>/dev/null
+source .env && CBCOLLECT_COUNT=$(ls -d $DIR_TICKETS/<ticket_number>/cbcollect_info_* 2>/dev/null | wc -l) && echo "Downloaded $CBCOLLECT_COUNT cbcollect nodes" && ls $DIR_TICKETS/<ticket_number>/ticket_files/ 2>/dev/null
 ```
 
 ### Smart Snapshot Download (Multi-Snapshot Tickets)
