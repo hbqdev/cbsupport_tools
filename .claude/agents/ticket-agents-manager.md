@@ -117,8 +117,7 @@ Working directory: $(git rev-parse --show-toplevel)"
 Once analyzer completes, find the latest versioned JSON:
 
 ```bash
-source .env
-ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1
+source .env && ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1
 ```
 
 **If file is missing:**
@@ -131,8 +130,7 @@ ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail 
 Read the latest versioned JSON:
 
 ```bash
-LATEST_JSON=$(ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1)
-cat "$LATEST_JSON"
+source .env && LATEST_JSON=$(ls -v $DIR_TICKETS/<ticket_number>/analysis_metadata_v*.json 2>/dev/null | tail -1) && cat "$LATEST_JSON"
 ```
 
 This contains all the structured analysis data from the ticket-analyzer.
@@ -290,11 +288,13 @@ Best regards,
 
 **Versioning the report** — never overwrite a previous report; always write a new `vN` file. Determine the next version number first:
 ```bash
-ls $DIR_TICKETS/<ticket_number>/analysis_report_v*.md 2>/dev/null | sort -V | tail -1
+source .env && ls $DIR_TICKETS/<ticket_number>/analysis_report_v*.md 2>/dev/null | sort -V | tail -1
 # If none exist: use analysis_report_v1.md
 # If analysis_report_v1.md exists: use analysis_report_v2.md, etc.
 # Use the same version number as the analysis_metadata_vN.json you are working from
 ```
+
+**⛔ RULE #0.6 (shell env vars do not persist across Bash calls):** `source .env` in one Bash tool call does NOT carry `$DIR_TICKETS` into your next Bash call — this harness resets shell state between calls. If you ever run `source .env` and `ls .../$DIR_TICKETS/...` as two separate tool calls, `$DIR_TICKETS` is empty on the second one, the `ls` silently matches nothing (the `2>/dev/null` hides the error), and you will conclude no prior version exists when one does — silently overwriting it. **Always chain `source .env &&` into the exact same command as any use of `$DIR_TICKETS`, every single time, no exceptions.** This already caused a real incident: ticket 79506's `analysis_report_v1.md` was overwritten in place instead of becoming `v2` because of exactly this. Before writing any `analysis_report_vN.md`, always re-run the versioning check chained with `source .env` in that same call, even if you checked it earlier in the conversation.
 
 **For v2+, don't restate unchanged sections in full.** Never overwrite the old file, but the new file doesn't need to duplicate everything either. Open with a short "Changes since v(N-1)" note (what changed and why), then write full content only for sections that actually changed; a section with no new information can say "Unchanged from v(N-1) — see that file" instead of being copied verbatim. Exception: the customer-facing response at the end must stay fully self-contained (it gets copied and sent as-is), so always write it out in full even when only one line changed.
 
