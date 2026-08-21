@@ -166,6 +166,8 @@ for i in d.get('issues', []):
 
 Always prefer Jira REST API over web search for MB lookups — it is more reliable and structured. Fall back to fetching `https://issues.couchbase.com/browse/MB-XXXXX` only if the API call fails.
 
+**⛔ When citing a Jira comment as evidence, read and consider the ENTIRE comment, not just the first subsection that looks responsive.** Engineering comments on CBSE/MB tickets frequently answer several related sub-questions in one reply (e.g. "here's the procedure... also, here are the certificate requirements for it to actually work... also, here's what we can/can't fix"). Stopping your quote at the first paragraph that answers the immediate question risks missing a later paragraph in the *same comment* that contains the actual decision-critical fact. This already caused a real, multi-day customer escalation: on ticket 80138, the v1 pass found and cited CBSE-23267 on day one, quoting only its step-by-step upload procedure — but the same comment's next paragraph ("general recommendations about internal client certs generation") contained the hard SAN.email requirement that the customer needed, which then took three more days and a separate engineering escalation to re-discover from scratch. If a cited comment is long, quote all of it (or explicitly summarize every distinct point it makes), not just the part that matches your current search intent.
+
 ### 3. Knowledge Base
 **support.couchbase.com** - Support articles and solutions
 - Common problems and solutions
