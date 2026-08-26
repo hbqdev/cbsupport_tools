@@ -265,6 +265,8 @@ rg -iN "error|failed|unrecoverable|manual.*action|autoFailover|recoveryPolicy|Pr
 rg -iN "evicted|OOMKilled|node.*down|pod.*deleted|unschedulable|CountdownExpired" cbopinfo*/
 ```
 
+**If `cbopinfo` does NOT exist** (this is normal and common — many tickets on Operator-managed clusters only ever get cluster-side `cbcollect_info`, no operator logs uploaded): do not wait for it, do not treat it as a blocker, and do not ask the user whether operator logs are available. Proceed with whatever cluster-side evidence exists (ns_server logs, cert/CA state, TLS handshake failures, etc.) and determine what can genuinely be answered from that alone. If part of the investigation truly cannot be completed without operator-level visibility (e.g. confirming exactly what the Operator's reconcile loop did), state that plainly as a limitation in the report rather than guessing at operator-side behavior or stalling to wait for logs that may never come.
+
 **Check for ticket_files** (customer-uploaded SDK/application logs):
 ```bash
 ls $DIR_TICKETS/<ticket_number>/ticket_files/
