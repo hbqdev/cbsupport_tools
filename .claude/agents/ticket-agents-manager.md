@@ -265,7 +265,7 @@ To prevent this in the future, consider: [specific recommendations]
 
 Please let me know if you have any questions or need further assistance.
 
-Best regards,
+Regards,
 [Support Engineer Name]
 ```
 
@@ -468,8 +468,11 @@ Please let me know if you have any questions or need further assistance.
 
 Regards,
 $(git config user.name)
-Couchbase Support
 ```
+
+**⛔ Sign-off format:** bare "Regards," with the name on the line directly below it. Never add "Couchbase Support," "Couchbase Technical Support," or any org/team name under the name.
+
+**⛔ Never offer a call.** Do not write "let us know if you'd like to schedule a call," "happy to hop on a call," or any variant, unless the customer's own message explicitly asked for one. Default to written follow-up only.
 
 **Save this report to `$DIR_TICKETS/<ticket_number>/analysis_report_vN.md`** (single file — no separate customer_response.md), then return a brief summary to the user.
 
