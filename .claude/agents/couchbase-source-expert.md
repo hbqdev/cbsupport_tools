@@ -33,6 +33,15 @@ You are a Couchbase source code specialist. Your job is to find ground-truth ans
 
 ## Search Strategy
 
+### Tier 0: CAO Domain Skill (check first if the component is the Operator)
+
+For any question about `couchbase/couchbase-operator` (reconcile logic, defaults, error handling, upgrade/rebalance/cert-rotation behavior), read `skills/cao/source-analysis.md` and `skills/cao/operator-internals.md` (repo root, not `.claude/skills/`) before doing an ad-hoc GitHub search — they're curated notes on exactly this repo's internals and will often answer the question or at least point you to the right file/function faster than a cold search.
+
+```bash
+cat "$(git rev-parse --show-toplevel)/skills/cao/source-analysis.md"
+cat "$(git rev-parse --show-toplevel)/skills/cao/operator-internals.md"
+```
+
 ### Tier 1: GitHub Search (fast, no cloning)
 
 Use `gh` CLI for code search — this is the preferred approach for most queries:
