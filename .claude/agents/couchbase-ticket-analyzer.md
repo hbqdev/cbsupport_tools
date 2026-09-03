@@ -229,6 +229,18 @@ The same pattern works for any section: `KV Engine`, `Cluster Management`, `Inde
 
 Use the patterns from the skill as the starting point for all searches; do not invent ad-hoc patterns when the skill already provides them.
 
+## Domain Skills — CAO / KV / Backup
+
+Beyond the log-search skill above, this repo has SME-level reference material for three domains, in `skills/cao/`, `skills/kv/`, `skills/backup/` (repo root, not `.claude/skills/`). Read the relevant one's `README.md` index first, then only the specific file(s) it points you to for this ticket's symptom, same lazy-load pattern as the log-analysis skill:
+
+```bash
+cat "$(git rev-parse --show-toplevel)/skills/cao/README.md"
+cat "$(git rev-parse --show-toplevel)/skills/kv/README.md"
+cat "$(git rev-parse --show-toplevel)/skills/backup/README.md"
+```
+
+**Always read `skills/cao/diagnostics.md` for any ticket on a CAO/Kubernetes-managed cluster** (a `cbopinfo` directory present, or the ticket mentions `CouchbaseCluster`, pods, Helm, or the Operator) — it covers cbopinfo structure, operator log locations, and first-response commands in more depth than this file's own inline cbopinfo notes below. Then read whichever other `skills/cao/*.md` file matches the specific symptom per its README table (storage/PVC issues, networking/TLS, operator-internals for upgrade/rebalance/cert-rotation/reconciliation, backups, cng, data-recovery, source-analysis, docs-reference). `skills/kv/kv-timeouts-and-resident-ratio.md` and `skills/backup/cbbackupmgr-failures.md` are single-file domains, read them directly when the symptom matches their README description.
+
 ## Analysis Workflow
 
 ### 1. Understand the Ticket
@@ -253,7 +265,7 @@ ls -lt $DIR_TICKETS/<ticket_number>/snapshots/ 2>/dev/null || ls -lt $DIR_TICKET
 ls $DIR_TICKETS/<ticket_number>/snapshots/*/cbopinfo*/ 2>/dev/null || ls $DIR_TICKETS/<ticket_number>/cbopinfo*/ 2>/dev/null
 ```
 
-If `cbopinfo` exists, it is the primary source for operator-level issues (pod scheduling, reconciliation loops, auto-failover decisions, recoveryPolicy behavior). Key files inside:
+If `cbopinfo` exists, it is the primary source for operator-level issues (pod scheduling, reconciliation loops, auto-failover decisions, recoveryPolicy behavior). **Read `skills/cao/diagnostics.md` now** (per Domain Skills above) for the full cbopinfo directory structure and how to read it; the patterns below are only a quick-start subset:
 ```bash
 # Operator pod log — main reconciliation and failover decisions
 find cbopinfo*/ -name "*.log" -o -name "*.txt" | sort
@@ -305,6 +317,8 @@ Map issue keywords to components and their log files:
 | View, mapreduce | Views | `couchdb.log` |
 | FTS, full-text | FTS | `ns_server.fts.log` |
 | Analytics, cbas | Analytics | `ns_server.analytics*.log` |
+| Pod stuck, CouchbaseCluster, Operator, reconcile, upgrade stuck, rebalance loop, cert rotation, admission webhook, PVC/storage, Helm | Operator (CAO) | `cbopinfo` (operator log, K8s events/describe output) — see Domain Skills above, read `skills/cao/README.md` first |
+| cbbackupmgr, CouchbaseBackup resource, backup failed/slow, restore | Backup | backup service logs, `cbbackupmgr` output — see `skills/backup/cbbackupmgr-failures.md` |
 
 ### 3. Research Documentation + Jira MB Search
 

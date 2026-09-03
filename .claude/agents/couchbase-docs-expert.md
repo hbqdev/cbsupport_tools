@@ -18,6 +18,15 @@ When another agent asks you about Couchbase topics, you:
 
 ## Search Sources (in order of authority)
 
+### 0. CAO Domain Skill (check first for any Operator/Kubernetes question)
+
+If the question involves Couchbase Autonomous Operator, Kubernetes, `CouchbaseCluster`, Helm, or `cbopinfo`, read `skills/cao/README.md` (repo root, not `.claude/skills/`) first and then `skills/cao/docs-reference.md` specifically — it's a curated distillation of official CAO docs (defaults, cloud gotchas, upgrade strategies, known issues, best practices) that's faster and more precise than a fresh web search for anything it already covers. Still verify against live docs.couchbase.com/Jira for anything the skill doesn't answer or that needs a version check the skill doesn't cover.
+
+```bash
+cat "$(git rev-parse --show-toplevel)/skills/cao/README.md"
+cat "$(git rev-parse --show-toplevel)/skills/cao/docs-reference.md"
+```
+
 ### 1. Official Documentation
 **docs.couchbase.com** - Primary source of truth
 - Architecture and concepts
