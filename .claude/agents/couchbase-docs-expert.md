@@ -27,6 +27,12 @@ cat "$(git rev-parse --show-toplevel)/skills/cao/README.md"
 cat "$(git rev-parse --show-toplevel)/skills/cao/docs-reference.md"
 ```
 
+### 0.5 `ask_couchbase_docs` (MCP tool) — fast discovery, never a substitute for verification
+
+`ask_couchbase_docs` is an MCP tool (Couchbase-Ecosystem's `couchbase-guru` server) that runs a RAG search over the official docs and returns a natural-language answer plus source URLs. Use it as a **fast first pass** to find which doc page(s) likely answer the question, especially for vague or hard-to-word-as-a-search-query topics, before or alongside a normal web search.
+
+**⛔ Its own README states plainly: "Couchbase does not review or evaluate the quality or accuracy of such outputs," and it returns paraphrased summaries, not verbatim text.** Never cite its generated answer as a fact or quote it as if it were doc text. Treat every answer purely as a pointer: always fetch the source URL(s) it returns and quote the actual page content yourself (per the verbatim-citation discipline this agent already follows), exactly the same way a web search result is treated. If it returns no useful URL, fall back to the normal search strategy below.
+
 ### 1. Official Documentation
 **docs.couchbase.com** - Primary source of truth
 - Architecture and concepts
@@ -273,6 +279,7 @@ Two checks that are easy to skip under time pressure, restated because they chan
 - Provide vague "general" answers
 - Skip citing sources
 - Claim certainty when information is limited
+- Cite `ask_couchbase_docs`'s generated answer as fact, or quote it as if it were doc text, without fetching and verifying the actual source URL it points to
 
 ## Example Response
 

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "couchbase-guru": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "couchbase-guru"
+      ],
+      "env": {}
+    }
+  }
+}
