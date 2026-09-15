@@ -30,13 +30,16 @@ held in SQLite. So staging consumption scales with **key count × key size**, en
 many bytes of value data the bucket holds. The documented sizing formula makes this explicit:
 
 ```
-staging GB ≈ (num_items × (avg_key_bytes + 30)) / 1000^3   +   (num_backups / 60)
+staging GB ≈ (num_items × (avg_key_bytes + 30)) / 1024^3
 ```
 
-At 24.6 B items that first term alone is on the order of 1–2 TB *per backup* for modest keys, before
-fragmentation and before the metadata term — which is why "40 TB of data needs 12 TB of staging" is not
+At 24.6 B items that term alone is on the order of 1-2 TB *per backup* for modest keys, before
+fragmentation and SQLite index overhead, which is why "40 TB of data needs 12 TB of staging" is not
 anomalous and shouldn't be argued with. Do the arithmetic with the customer's actual item count and avg
-key length instead of eyeballing it against bucket size.
+key length instead of eyeballing it against bucket size. (Corrected 2026-09-03: an earlier version of
+this note added a fabricated `+ num_backups/60` term and used a 1000^3 divisor; neither appears in the
+documented formula, which uses 1024^3 only. Source: docs.couchbase.com cbbackupmgr-cloud, "Disk
+Requirements".)
 
 **How to confirm.** In the client log (`logs/backup-N.log` inside the archive, or the pod's stdout):
 
@@ -90,7 +93,7 @@ DCP (Producer) eq_dcpq:cbbackupmgr:<ts>_<pid>_<n> - Unable to notify paused conn
 
 Note the middle field: despite the `bytesSent` label it is *outstanding* bytes, and `outstanding ≈ maxBytes`
 is the tell. Then the authoritative one, emitted from `~DcpProducer` and aggregated by
-`ConnHandler::getPausedDetailsDescription()`:
+`ConnHandler::getPausedDetails()`:
 
 ```
 Destroying connection. Created 80810.651 s ago. Sent 169633099519 bytes. ... Paused 871606 times,
@@ -259,8 +262,10 @@ that the *client* tore the stream down. It points the investigation at the backu
 
 **Client side (cbbackupmgr).**
 
-- `<archive>/<repo>/logs/backup-N.log` — repo-level as of Totoro and later; older builds put them at
-  `<archive>/logs/`. Absence at the old path is not "logs missing". Rotates at 200 MB, keeps 5.
+- `<archive>/logs/backup-N.log` — logs live at the archive root (confirmed against `couchbase/backup`
+  source and docs, through at least 7.6.x/8.0.x). An earlier version of this note claimed a repo-level
+  path "as of Totoro"; that wasn't confirmed anywhere in source or docs and has been removed, don't
+  expect a per-repo `logs/` directory. Rotates at 200 MiB, keeps 5.
 - `cbbackupmgr collect-logs` output zip (`cbbackupmgr-collectinfo-archive-<ts>.zip`) — this is a **separate
   artifact from the server cbcollect** and is where the client-side truth lives. Always ask for both.
 - If the archive is unreachable so `collect-logs` itself fails: rerun with
