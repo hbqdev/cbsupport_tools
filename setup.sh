@@ -73,12 +73,18 @@ if [[ -f "$ENV_FILE" ]]; then
   else
     echo "DIR_TICKETS=$DIR_TICKETS" >> "$ENV_FILE"
   fi
+  if grep -q '^BASE_DIR=' "$ENV_FILE"; then
+    sed -i '' "s|^BASE_DIR=.*|BASE_DIR=$DIR_TICKETS|" "$ENV_FILE"
+  else
+    echo "BASE_DIR=$DIR_TICKETS" >> "$ENV_FILE"
+  fi
 else
   cat > "$ENV_FILE" << EOF
 DIR_TICKETS=$DIR_TICKETS
+BASE_DIR=$DIR_TICKETS
 EOF
 fi
-ok "Wrote DIR_TICKETS to $ENV_FILE"
+ok "Wrote DIR_TICKETS and BASE_DIR to $ENV_FILE"
 
 # ── 3. AWS SSO credentials ────────────────────────────────────────────────────
 echo ""
@@ -217,7 +223,7 @@ echo ""
 bold "Setup complete."
 echo ""
 info "Summary:"
-info "  Tickets dir:  $DIR_TICKETS  (.env)"
+info "  Tickets dir:  $DIR_TICKETS  (.env: DIR_TICKETS, BASE_DIR)"
 info "  AWS profile:  $AWS_PROFILE_NAME  (.env)"
 info "  Jira creds:   $JIRA_ENV_FILE"
 info "  Signature:    $(git config user.name)"
