@@ -17,16 +17,31 @@ The script covers:
 | What | Where |
 |------|--------|
 | Ticket download directory (`DIR_TICKETS`, `BASE_DIR`) | `.env` |
-| AWS SSO profile name | `.env` |
+| AWS SSO profile name (`AWS_PROFILE`) | `.env` |
 | Jira credentials | `~/.couchbase-support/jira.env` |
 | Git user name (ticket response signature) | `git config user.name` |
 | Jira MCP server for Claude Code (optional) | `~/.claude.json` via `claude mcp add` |
 
-After setup, authenticate AWS SSO before downloading tickets:
+**AWS SSO setup — two steps, in order:**
 
-```bash
-aws sso login --profile supportal
-```
+1. **Configure the profile in `~/.aws/config`** (one-time, per machine). `setup.sh` prompts for a profile name — it defaults to `supportal`, but this is just a name, not a fixed requirement; use whatever your `~/.aws/config` actually has, or create a new one:
+
+   ```ini
+   [profile supportal]
+   sso_start_url  = https://couchbase.awsapps.com/start
+   sso_region     = us-east-1
+   sso_account_id = <your-account-id>
+   sso_role_name  = <your-role-name>
+   region         = us-east-1
+   ```
+
+   `setup.sh` checks whether the profile you named already exists here and prints this block for you to fill in if it doesn't.
+
+2. **Authenticate**, using whatever profile name you configured in step 1 and told `setup.sh` about:
+
+   ```bash
+   aws sso login --profile supportal   # replace 'supportal' with your actual profile name
+   ```
 
 Install required CLI tools if missing:
 
@@ -45,7 +60,7 @@ The first time you use the repo in a session (or after pulling changes), it help
 ```
 Before we start, review this repo: confirm the agents in .claude/agents are readable,
 check that .env has DIR_TICKETS and BASE_DIR set to a real, existing directory, confirm
-AWS SSO is authenticated (aws sts get-caller-identity --profile supportal), and confirm
+AWS SSO is authenticated (aws sts get-caller-identity --profile <the AWS_PROFILE value from .env>), and confirm
 Jira credentials in ~/.couchbase-support/jira.env work. Also confirm the ticket-agents-manager
 workflow is wired correctly end to end: it should call couchbase-ticket-analyzer first, then
 couchbase-docs-expert (mandatory) and couchbase-source-expert (when docs aren't enough), then
