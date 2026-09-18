@@ -16,7 +16,7 @@ The script covers:
 
 | What | Where |
 |------|--------|
-| Ticket download directory (`DIR_TICKETS`) | `.env` |
+| Ticket download directory (`DIR_TICKETS`, `BASE_DIR`) | `.env` |
 | AWS SSO profile name | `.env` |
 | Jira credentials | `~/.couchbase-support/jira.env` |
 | Git user name (ticket response signature) | `git config user.name` |
@@ -40,11 +40,26 @@ See [`docs/jira-mcp-setup.md`](docs/jira-mcp-setup.md) for manual Jira MCP confi
 
 ## Quick Start
 
+The first time you use the repo in a session (or after pulling changes), it helps to have Claude sanity-check the setup before jumping into a ticket:
+
+```
+Before we start, review this repo: confirm the agents in .claude/agents are readable,
+check that .env has DIR_TICKETS and BASE_DIR set to a real, existing directory, confirm
+AWS SSO is authenticated (aws sts get-caller-identity --profile supportal), and confirm
+Jira credentials in ~/.couchbase-support/jira.env work. Also confirm the ticket-agents-manager
+workflow is wired correctly end to end: it should call couchbase-ticket-analyzer first, then
+couchbase-docs-expert (mandatory) and couchbase-source-expert (when docs aren't enough), then
+run its own QA checks before producing analysis_report_vN.md. Tell me what's missing, if
+anything, before we analyze a ticket.
+```
+
+Once that comes back clean, analyze a ticket with:
+
 ```
 Analyze ticket 76783
 ```
 
-Run that prompt in any supported AI tool — the orchestrator (`ticket-agents-manager`) handles the full pipeline automatically: downloads logs, identifies root cause, researches docs/MBs, QA-checks the findings, and drafts a customer response.
+Run that prompt in Claude Code — the orchestrator (`ticket-agents-manager`) handles the full pipeline automatically: downloads logs, identifies root cause, researches docs/MBs, QA-checks the findings, and drafts a customer response.
 
 ---
 
@@ -59,11 +74,7 @@ Run that prompt in any supported AI tool — the orchestrator (`ticket-agents-ma
 
 ### Where the agents live
 
-| Platform | Location | Notes |
-|----------|----------|-------|
-| Factory droids | `.factory/droids/` | **Primary** — most up to date |
-| Claude Code | `.claude/agents/` | Same agents, Claude Code format |
-| GitHub Copilot | `.github/copilot/agents/` | See `.github/copilot/agents/README.md` |
+`.claude/agents/` — Claude Code is the only supported platform for these agents.
 
 ### Scripts
 
