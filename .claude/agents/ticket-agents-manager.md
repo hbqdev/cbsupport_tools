@@ -473,10 +473,18 @@ into this response, e.g.:
 Please let me know if you have any questions or need further assistance.
 
 Regards,
-$(git config user.name)
+[Ticket assignee's name]
 ```
 
 **⛔ Sign-off format:** bare "Regards," with the name on the line directly below it. Never add "Couchbase Support," "Couchbase Technical Support," or any org/team name under the name.
+
+**⛔ Sign with the ticket's actual assignee, not whoever is running this tool.** Look up the assignee from the raw ticket JSON:
+
+```bash
+jq -r '.assignee.name // "UNASSIGNED"' "$DIR_TICKETS/<ticket_number>/ticket_<number>.raw"
+```
+
+Use that name as the sign-off. Only fall back to `git config user.name` if the assignee field is null/missing (unassigned ticket) — never use the local git identity when the ticket already has a named assignee, since that is very often a different person than whoever happens to be running the analysis.
 
 **⛔ Never offer a call.** Do not write "let us know if you'd like to schedule a call," "happy to hop on a call," or any variant, unless the customer's own message explicitly asked for one. Default to written follow-up only.
 
