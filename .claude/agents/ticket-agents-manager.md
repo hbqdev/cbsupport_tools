@@ -177,6 +177,8 @@ Perform these validation checks on the analysis:
   - For Query issues: ns_server.query.log, completed_requests.json checked?
   - For Index/latency issues: **ALL FOUR required** — ns_server.query.log errors, ns_server.indexer.log state transitions, replica availability check, GSI retry path?
   - For cluster issues: ns_server.info.log AND ns_server.debug.log reviewed?
+  - ⛔ **`diag.log` reviewed on every node?** Does the report state each log's first/last timestamp, and are event counts and "first/last occurrence" claims based on the widest window (usually `diag.log`), not just a rotated `ns_server.info.log`? Re-run one count against `diag.log` yourself. Reject the analysis if `diag.log` is not mentioned.
+  - ⛔ **Whole-log sweep done for each key error?** For every error string/ID the root cause relies on, did the analyzer search the whole ticket logs folder recursively (`$DIR_TICKETS/<ticket>/`, covering all nodes, `diag.log`, `couchbase.log`, journal, `ticket_files/`) and report per-file hit counts? Run `cd "$DIR_TICKETS/<ticket>" && rg -z -N -i -c '<string>' . | rg -v ':0$'` yourself for at least one key string. Reject "no other evidence" claims that rest on searching a single file.
 - ✅ **Causal claims backed by both-sides evidence**: For every "A caused B" claim, is there log evidence from BOTH A and B — not just temporal proximity?
 - ✅ **Index replica analysis**: For any "Index not ready" issue — were replicas checked? Were they in ready state? Was the GSI endpoint in the error matched to the failing node?
 - ✅ **Timestamp precision**: Did analyzer use ±2 minute windows around issue time?
