@@ -22,9 +22,22 @@ Expert `rg` patterns for searching Couchbase server logs. Read this file before 
 | FTS (Search) | `ns_server.fts.log` | |
 | Views | `couchdb.log` | |
 | Eventing | `ns_server.eventing.log` | |
+| Cluster event history | `diag.log` | Long-retention event log (rebalance/failover/auto-failover/bucket events). Often spans far more than `ns_server.info.log`, which rotates. Always check it and compare windows |
 | Babysitter | `ns_server.babysitter.log` | Process starts/stops/crashes |
 | System Snapshot | `couchbase.log` | Static snapshot: config, cbstats, disk, services |
 | CAO Operator | `cbopinfo*/` directory | Present on CAO-managed clusters only |
+
+**Coverage check (do first, per node):** compare each log's time span before counting anything.
+```bash
+for f in cbcollect_*/diag.log cbcollect_*/ns_server.info.log cbcollect_*/ns_server.debug.log; do
+  echo "$f: $(rg -N -o '^\[?[a-z_:]*,?20[0-9-]+T[0-9:.]+' "$f" | rg -o '20[0-9-]+T[0-9:.]+' | sed -n '1p;$p' | tr '\n' ' ')"
+done
+```
+
+**Whole-log sweep when you find an error:** run recursively from the ticket directory, which holds all nodes' logs, all snapshots and `ticket_files/`. Show per-file hit counts first, then read the hits.
+```bash
+cd "$DIR_TICKETS/<ticket>" && rg -z -N -i -c '<error string or id>' . | rg -v ':0$'
+```
 
 ---
 
