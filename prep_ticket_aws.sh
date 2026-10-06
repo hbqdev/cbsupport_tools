@@ -90,6 +90,12 @@ cleanup() {
 # Trap SIGINT (Ctrl+C) and SIGTERM to cleanup properly
 trap cleanup SIGINT SIGTERM
 
+# Never exit silently under set -e: report which command failed and where.
+# (-E makes the ERR trap fire inside functions and command substitutions.
+# Commands guarded by `||` or used as `if` conditions do not trigger it.)
+set -E
+trap 'echo "ERROR: ${BASH_SOURCE[0]##*/}:${LINENO}: command failed (exit $?): ${BASH_COMMAND}" >&2' ERR
+
 _check_dep() {
     if ! command -v "$1" &>/dev/null; then
         echo "ERROR: Required tool '$1' not found." >&2
@@ -258,9 +264,9 @@ cbsnap() {
 
     # Derive a stable folder name: YYYY-MM-DD_<snapshot-id>
     local snap_date snap_id snap_dir
-    snap_date=$(echo "$file_list" | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+    snap_date=$(echo "$file_list" | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1 || true)
     [ -z "$snap_date" ] && snap_date=$(date +%Y-%m-%d)
-    snap_id=$(echo "$base_url" | grep -oE '[a-f0-9]{8,}' | head -1 | cut -c1-8)
+    snap_id=$(echo "$base_url" | grep -oE '[a-f0-9]{8,}' | head -1 | cut -c1-8 || true)
     snap_dir="$ticket_dir/snapshots/${snap_date}_${snap_id}"
 
     mkdir -p "$snap_dir"
@@ -374,7 +380,7 @@ prep_ticket() {
             (.. | strings)
         ] | join(" ")
     ' "$raw_file" 2>/dev/null | \
-        grep -oE 'https://supportal\.couchbase\.com/snapshot/[a-f0-9]+::[0-9]+' | \
+        { grep -oE 'https://supportal\.couchbase\.com/snapshot/[a-f0-9]+::[0-9]+' || true; } | \
         sort -u)
 
     local snapshot_count=0
@@ -412,7 +418,8 @@ prep_ticket() {
     ' "$raw_file" 2>/dev/null)
 
     local num_attachments
-    num_attachments=$(echo "$all_attachment_urls" | grep -c 'http' 2>/dev/null || echo 0)
+    num_attachments=$(echo "$all_attachment_urls" | grep -c 'http' 2>/dev/null || true)
+    num_attachments="${num_attachments:-0}"
 
     if [ "$num_attachments" -gt 0 ] 2>/dev/null; then
         mkdir -p "$attachment_dir"
@@ -428,7 +435,7 @@ prep_ticket() {
         while IFS= read -r att_url; do
             [ -z "$att_url" ] && continue
             local fname
-            fname=$(echo "$att_url" | grep -oE 'name=[^&]+' | sed 's/name=//' | sed 's/%20/_/g')
+            fname=$(echo "$att_url" | { grep -oE 'name=[^&]+' || true; } | sed 's/name=//' | sed 's/%20/_/g')
             if [ -z "$fname" ]; then
                 fname="attachment_$(echo "$att_url" | md5sum | cut -c1-8)"
             fi
@@ -487,7 +494,7 @@ prep_ticket() {
             (.. | strings)
         ] | join(" ")
     ' "$raw_file" 2>/dev/null | \
-        grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?' | \
+        { grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?' || true; } | \
         sort -V -u | \
         jq -R -s 'split("\n") | map(select(length > 0))')
 
