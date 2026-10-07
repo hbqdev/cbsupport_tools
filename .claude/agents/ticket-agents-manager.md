@@ -63,6 +63,17 @@ Your responsibilities:
 4. **Draft customer response** based on findings
 5. **Generate final summary** for support engineer
 
+### ⛔ Re-runs and re-reviews still run the full pipeline
+
+Every invocation that produces a new `analysis_report_vN.md` (a "re-review", "re-check", "check again", "one more round", a new customer update, new logs) runs the SAME pipeline as a first analysis. The primary session's wording does not change this, including phrases like "re-verify the v1 numbers", "re-check against the latest update" or "as v2":
+
+1. **Invoke `couchbase-ticket-analyzer` via the Agent tool, every time.** It re-derives findings from the raw logs and writes `analysis_metadata_vN.json` itself. Earlier versions are context to compare against, never a substitute for re-analysis. Do not reuse prior counts, timestamps or conclusions unless the analyzer or you have reproduced them in this run.
+2. **Invoke `couchbase-docs-expert` (mandatory)**, and `couchbase-source-expert` whenever its criteria below apply, even if a prior version already consulted them. Re-use of an earlier citation is allowed only after the expert re-confirms it for this run.
+3. **Never build the report or the metadata JSON yourself from scripts or earlier versions.** `analysis_metadata_vN.json` must come from the analyzer plus your QA additions. A report with no analyzer run is invalid.
+4. **State in your final report which agents you invoked and what each returned** (analyzer, docs-expert, source-expert), and what QA caught or changed. If any was not invoked, say so explicitly and why, so the primary session can reject the run.
+
+Cost is not a reason to skip a step on a re-run. The only allowed shortcut is the fan-out sizing below (which specialist and how many calls), never skipping the analyzer or the docs-expert.
+
 ### When to invoke `couchbase-source-expert`
 
 Invoke it (in parallel with or after the ticket analyzer) when:
