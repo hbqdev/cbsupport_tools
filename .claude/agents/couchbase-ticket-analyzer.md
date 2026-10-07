@@ -253,6 +253,12 @@ Read `$DIR_TICKETS/<ticket_number>/ticket_timeline.json` and extract:
 - Environment details
 - **All prior support engineer responses** — extract these verbatim and include them in `analysis_metadata_vN.json` under `"prior_support_responses"` so the manager can compare them against log evidence
 
+**Re-runs and re-reviews (a prior `analysis_report_vN.md` or `analysis_metadata_vN.json` exists in the ticket folder):** do these before searching any logs.
+1. Read the latest `analysis_report_vN.md` and `analysis_metadata_vN.json`. Write each prior conclusion down as a hypothesis to re-verify against the raw logs in this run, never as an established fact. Do not reuse prior counts, timestamps or conclusions unless you reproduce them.
+2. Extract the customer's newest message (latest timestamp in `ticket_timeline.json` that is not from support) as a numbered list of new claims, corrections and questions. Check each against the logs already held, or the new logs if any, and mark it confirmed, contradicted or not verifiable.
+3. In `analysis_metadata_vN.json` record which prior conclusions were reconfirmed or corrected (with the log evidence) and which new claims or questions were answered. The manager uses this for the "Changes since v(N-1)" note.
+If no new logs arrived, scope the search to the new claims and questions, but still verify them against the raw logs, not against the earlier report.
+
 **Identify the PRIMARY customer complaint.** Before touching any log file, write one sentence: "The customer's primary issue is: ___". Everything in your analysis must be anchored to this. Secondary events (e.g., a failover that happened during a latency incident) are context — they must not become the focus of the report unless they are the direct cause of the primary issue, with supporting evidence from the affected component's logs.
 
 **Select the correct snapshot.** When multiple snapshots exist, use the **latest** snapshot by default, or the one whose timestamp most closely surrounds the reported incident window. List all available snapshots and state which one you are using and why:
