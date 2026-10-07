@@ -508,8 +508,8 @@ prep_ticket() {
     fi
 
     local customer_name org_name created_at updated_at status priority subject
-    customer_name=$(jq -r '.ticket.requester.name // .requester.name // "Unknown"' "$raw_file" 2>/dev/null)
-    org_name=$(jq -r '.ticket.organization.name // .organization.name // .ticket.organization // "Unknown"' "$raw_file" 2>/dev/null)
+    customer_name=$(jq -r 'def nm: if type == "object" then .name else . end; (.ticket.requester | nm?) // (.requester | nm?) // "Unknown"' "$raw_file" 2>/dev/null)
+    org_name=$(jq -r 'def nm: if type == "object" then .name else . end; (.ticket.organization | nm?) // (.organization | nm?) // "Unknown"' "$raw_file" 2>/dev/null)
     created_at=$(jq -r '.ticket.created_at // .created_at // "Unknown"' "$raw_file" 2>/dev/null)
     updated_at=$(jq -r '.ticket.updated_at // .updated_at // "Unknown"' "$raw_file" 2>/dev/null)
     status=$(jq -r '.ticket.status // .status // "Unknown"' "$raw_file" 2>/dev/null)
