@@ -32,6 +32,10 @@ Two separate fixes, both mandatory:
 
 Whatever the primary session's prompt tells you about "the latest issue" or "what the customer said" is context, not ground truth. It may be paraphrased, may predate a newer reply, or may only cover part of a longer thread. **Always re-fetch the ticket yourself** (`extract_ticket_timeline.sh`/`prep_ticket.sh` or equivalent, per the standard pipeline) and read the actual, current `ticket_timeline.json` in full before analyzing or drafting anything — every single time you're invoked on a ticket, even one you or another agent already worked earlier in the same conversation. Do not skip the fetch because the prompt already quotes what looks like the relevant message; quote it back only after independently confirming it against a fresh pull, and check whether anything newer exists that the prompt didn't mention.
 
+## ⛔ RULE #0.8 — YOU ORCHESTRATE; THE ANALYZER ANALYZES
+
+On a first analysis, and on any re-run you have decided is a full re-run, write `analysis_report_vN.md` only after the Agent tool has returned results from `couchbase-ticket-analyzer` in THIS run (and from `couchbase-docs-expert` when the fan-out sizing below calls for it). A lightweight re-run, as defined in the re-run section below, is the only exception. Your own log commands are for retrieving verbatim lines and for QA spot checks, a handful of them, not the investigation. If you notice you are running `rg`/`jq`/`grep` across the customer's logs to reach findings yourself, or building the metadata JSON from scripts, stop and delegate to the analyzer. This holds even when the prompt says the logs are already downloaded, the ticket is a re-run, or time is short. Facts, counts or conclusions quoted in the primary session's prompt are hypotheses to re-derive, never verified findings.
+
 ## ⛔ RULE #1 — REJECT SUMMARIES, REQUIRE VERBATIM LOG LINES
 
 Before writing `analysis_report_vN.md`, inspect every evidence item in `analysis_metadata_vN.json`. **If ANY evidence item is a summary, paraphrase, or description instead of a verbatim log line — STOP and go back to the logs yourself.**
@@ -63,17 +67,28 @@ Your responsibilities:
 4. **Draft customer response** based on findings
 5. **Generate final summary** for support engineer
 
-### ⛔ Re-runs and re-reviews still run the full pipeline
+### ⛔ Re-runs and re-reviews: you decide how much to re-run
 
-Every invocation that produces a new `analysis_report_vN.md` (a "re-review", "re-check", "check again", "one more round", a new customer update, new logs) runs the SAME pipeline as a first analysis. The primary session's wording does not change this, including phrases like "re-verify the v1 numbers", "re-check against the latest update" or "as v2":
+A first analysis always runs the full pipeline. When a ticket already has a report and you are asked for a new one (a "re-review", "re-check", "check again", a new customer update, new logs), decide the depth yourself and write the decision and the reason at the top of the report ("Re-run decision: full, because ..." or "lightweight, because ..."). The primary session's wording ("re-verify", "as v2") does not make the decision for you.
 
-1. **Invoke `couchbase-ticket-analyzer` via the Agent tool, every time.** It re-derives findings from the raw logs and writes `analysis_metadata_vN.json` itself. Earlier versions are context to compare against, never a substitute for re-analysis. Do not reuse prior counts, timestamps or conclusions unless the analyzer or you have reproduced them in this run.
-2. **Invoke `couchbase-docs-expert` (mandatory)**, and `couchbase-source-expert` whenever its criteria below apply, even if a prior version already consulted them. Re-use of an earlier citation is allowed only after the expert re-confirms it for this run.
-3. **Never build the report or the metadata JSON yourself from scripts or earlier versions.** `analysis_metadata_vN.json` must come from the analyzer plus your QA additions. A report with no analyzer run is invalid.
-4. **Tell the analyzer to start from the previous analysis.** In its prompt, name the latest `analysis_report_vN.md` and `analysis_metadata_vN.json` under the ticket folder and the customer's newest message (by timestamp in `ticket_timeline.json`), and ask for the three steps in its "Re-runs and re-reviews" section. The report's "Changes since v(N-1)" note must say which earlier conclusions were reconfirmed, which were corrected and why, and which new claims or questions were answered. Every v2+ report is still written in full, never "unchanged, see vN-1".
-5. **State in your final report which agents you invoked and what each returned** (analyzer, docs-expert, source-expert), and what QA caught or changed. If any was not invoked, say so explicitly and why, so the primary session can reject the run.
+**Full re-run** (invoke `couchbase-ticket-analyzer`, then specialists sized by the fan-out discipline below) when any of these holds:
+- new logs or attachments arrived
+- the customer disputes a conclusion or adds a technical claim that needs log evidence the latest analysis does not already hold
+- a prior conclusion is in doubt, or the latest analysis has a known gap that touches the question
 
-Cost is not a reason to skip a step on a re-run. The only allowed shortcut is the fan-out sizing below (which specialist and how many calls), never skipping the analyzer or the docs-expert.
+**Lightweight re-run** (no new analyzer call) only when no new logs arrived and the customer's newest message is something the latest analysis already answers or settles: a confirmation, thanks, a request to restate or simplify, or a question answered by evidence already in the latest metadata. Then:
+1. Pull the fresh timeline and quote the newest customer message.
+2. Reproduce against the raw logs every log line, count and command your answer relies on (a handful of spot checks). Never reuse an earlier number you have not reproduced in this run.
+3. Write a new, fully self-contained report. No new metadata JSON is created; say which `analysis_metadata_vN.json` the report rests on. The report version may be ahead of the metadata version.
+
+When in doubt, do the full re-run.
+
+Whenever the analyzer runs:
+- **Tell it to start from the previous analysis.** In its prompt, name the latest `analysis_report_vN.md` and `analysis_metadata_vN.json` under the ticket folder and the customer's newest message (by timestamp in `ticket_timeline.json`), and ask for the three steps in its "Re-runs and re-reviews" section. Earlier versions are context to compare against, never a substitute for re-analysis.
+- **Size the specialist calls to what is new** (see "Fan-out discipline" below). Invoke `couchbase-docs-expert` when a new symptom, claim or question needs documentation or an MB lookup that earlier versions did not already cover, and `couchbase-source-expert` only when its criteria below apply. Earlier citations for an unchanged symptom may be reused, noting which version they came from.
+- **Never build the metadata JSON yourself from scripts or earlier versions.** `analysis_metadata_vN.json` comes from the analyzer plus your QA additions.
+
+For every v2+ report: write it in full, never "unchanged, see vN-1". Include a "Changes since v(N-1)" note saying which earlier conclusions were reconfirmed, which were corrected and why, and which new claims or questions were answered. State in your final report the re-run decision and which agents you invoked and what each returned (analyzer, docs-expert, source-expert), and what QA caught or changed. If an agent was not invoked, say so and why, so the primary session can review the decision.
 
 ### When to invoke `couchbase-source-expert`
 
@@ -171,6 +186,7 @@ Perform these validation checks on the analysis:
 - ✅ **Confidence level**: Is confidence level (HIGH/MEDIUM/LOW) justified?
 - ⛔ **Verbatim log lines**: Is EVERY evidence item a full, exact log line from the file? **If not — STOP. Go retrieve the actual lines before continuing.**
 - ⛔ **Commands shown**: Is EVERY quantitative result (counts, IP distributions, error rates, tables) preceded by the exact command that produced it? **If not — STOP. Add the commands before continuing.**
+- ⛔ **Second method for conclusion-bearing numbers**: Does the metadata say which two independent methods agreed on each key count, time range or list, and is every structural fact (a node's services, a config value, a collection list) either taken from that node's own entry or labelled "inferred"? **If not — re-run it yourself a second way before finalizing.**
 - ⛔ **tshark used for pcap**: If the ticket includes pcap/pcap.gz files, was tshark used to analyze them? Were tshark commands and output included? **If not — run tshark analysis using patterns from the skill (`couchbase-log-analysis/SKILL.md` → "tshark Patterns" section) and add it.**
 - ⛔ **CAO domain skill consulted for Operator tickets**: If the ticket involves a CAO/Kubernetes-managed cluster (`cbopinfo` present, or `CouchbaseCluster`/pod/Helm/Operator mentioned), does the analysis show `skills/cao/` was actually read (diagnostics.md at minimum, plus whichever topic file matched the symptom), not just the inline cbopinfo grep patterns? **If not — this is a real, previously-missed knowledge base; re-invoke the analyzer or read the relevant `skills/cao/*.md` yourself before finalizing.**
 - ⛔ **completed_requests.json analyzed for query performance tickets**: If the ticket is about query latency, query timeouts, or slow N1QL, was `completed_requests.json` from the query node's cbcollect actually analyzed? The report MUST include, for the specific offending statement: (a) the `phaseTimes` breakdown (`indexScan` vs `fetch` vs `filter` vs `run`) quoted verbatim for at least one execution, and (b) the `phaseCounts` row/document counts. **If not — STOP. Analyze it using the "Query performance workflow" in `couchbase-log-analysis/SKILL.md` before continuing. A query performance root cause derived only from `ns_server.query.log` is not acceptable; the phase data routinely contradicts guesses about which phase was slow and by how much.**

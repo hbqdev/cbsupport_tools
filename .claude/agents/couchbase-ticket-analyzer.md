@@ -481,6 +481,14 @@ Before writing "event A caused event B" in any report, you must have log evidenc
 
 **If you cannot produce evidence for both sides of the causal chain, state the correlation as a hypothesis, not a finding, and mark confidence MEDIUM or LOW.**
 
+### ⛔ RULE — EVIDENCE DISCIPLINE FOR COUNTS, PARSES AND STRUCTURE
+
+- **Two methods for every number that carries a conclusion.** Reproduce each count, time range or parsed list a second, independent way (for example `rg -c` and `awk`, or a script's parse plus a literal grep of the raw text) and record in the metadata which two agreed. A script that parses a structured dump (Erlang terms, JSON, a manifest) must be cross-checked by grepping the raw text for at least one element it reports as missing or present. A regex that expects a header alone on its line will silently mis-file items that share that line.
+- **Exclude duplicate-suppression lines from counts.** A bare `rg -c` of an error string also counts `suppressing duplicate log` lines. Count the real occurrences and say how.
+- **Structural facts need the node's own evidence.** A node's services, a config value or a bucket/collection list must come from that node's own entry (for example `{node,'ns_1@<node>',services}`). The first match in a cluster-wide list is not the node's own entry. With only indirect evidence, write "inferred from <what>".
+- **State each log's first and last timestamp.** An event after the last timestamp cannot be decided from those logs; say so instead of inferring. A screenshot has no clock unless a visible timestamp or a matching log line proves it, so date it only as "inferred".
+- **Facts in a prompt or a prior report are hypotheses.** Re-derive them from the raw logs in this run.
+
 ### 5. Generate Report
 
 ## ⛔ PRE-OUTPUT CHECKLIST — DO NOT SKIP
@@ -488,7 +496,7 @@ Before writing "event A caused event B" in any report, you must have log evidenc
 Before writing `analysis_metadata_vN.json`, verify ALL of the following are true. If any are false, go back and complete the missing step:
 
 - [ ] **`prep_ticket_aws.sh` was run** and cbcollect/snapshot logs are present locally
-- [ ] **`couchbase-docs-expert` was invoked** via the Task tool for each primary symptom/error — MANDATORY, no exceptions
+- [ ] **`couchbase-docs-expert` was invoked** via the Task tool for each primary symptom/error — MANDATORY on a first analysis; on a re-run, for each symptom or claim the previous version did not already cover (reuse earlier citations for unchanged symptoms and say which version they came from)
 - [ ] **`couchbase-source-expert` was invoked** via the Task tool for any log message or behavior not fully explained by docs — invoke if docs expert returned no documentation for a behavior
 - [ ] **Every evidence item is a full verbatim log line** copied from the file — no summaries or paraphrases
 - [ ] **`customer_response_draft.body` is fully written** — not a template placeholder
