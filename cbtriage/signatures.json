@@ -1,0 +1,353 @@
+[
+ {
+  "id": "autofailover-triggered",
+  "title": "Auto-failover triggered",
+  "component": "ns_server",
+  "severity": "high",
+  "files": [
+   "ns_server.info.log",
+   "ns_server.debug.log"
+  ],
+  "regex": "auto_failover:.*(Failing over|Could not automatically fail over|failover.*node)",
+  "meaning": "Auto-failover engine acted or refused to act. Read the reason line and the node's health just before it.",
+  "next": "Open the Timeline at this time, +/- 2m, files info/error/memcached."
+ },
+ {
+  "id": "failover-rest",
+  "title": "Failover requested (REST or auto)",
+  "component": "ns_server",
+  "severity": "high",
+  "files": [
+   "ns_server.info.log",
+   "ns_server.debug.log"
+  ],
+  "regex": "Starting failover of nodes|Failover of inactive nodes|Failover completed successfully",
+  "meaning": "Failover started or completed. Cross-check the caller in the Access tab (POST /controller/failOver).",
+  "next": "Access tab: pattern 'controller/failOver', group by client."
+ },
+ {
+  "id": "rebalance-failed",
+  "title": "Rebalance failed or stopped",
+  "component": "ns_server",
+  "severity": "high",
+  "files": [
+   "ns_server.info.log",
+   "ns_server.debug.log",
+   "ns_server.error.log"
+  ],
+  "regex": "Rebalance exited with reason|rebalance_failed|Rebalance failed",
+  "meaning": "A rebalance ended abnormally. The reason term names the failing service or bucket.",
+  "next": "Search the same node for the reason term; check rebalance_report_*.json."
+ },
+ {
+  "id": "ns-server-crash",
+  "title": "ns_server process crash report",
+  "component": "ns_server",
+  "severity": "high",
+  "files": [
+   "ns_server.error.log",
+   "ns_server.info.log"
+  ],
+  "regex": "CRASH REPORT|crash_report|\\*\\* Generic server .* terminating|Server .* terminating",
+  "meaning": "An Erlang process died. The first crash in the window is usually the cause, later ones are fallout.",
+  "next": "Timeline from the first hit, +/- 1m."
+ },
+ {
+  "id": "oom-killer",
+  "title": "Out-of-memory (OS or process)",
+  "component": "os",
+  "severity": "high",
+  "files": [
+   "ns_server.babysitter.log",
+   "ns_server.info.log",
+   "memcached.log",
+   "systemd_journal*"
+  ],
+  "regex": "Out of memory|oom-kill|Killed process|Cannot allocate memory",
+  "meaning": "The kernel or a service ran out of memory.",
+  "next": "Check couchbase.log memory sections and cgroup limits."
+ },
+ {
+  "id": "memcached-exit",
+  "title": "memcached exited or restarted",
+  "component": "kv",
+  "severity": "high",
+  "files": [
+   "ns_server.babysitter.log",
+   "ns_server.info.log"
+  ],
+  "regex": "Port server memcached on node .* exited|memcached.*(exited|terminated)|Memcached.*crash",
+  "meaning": "KV process went down. Look at the exit status and memcached.log just before it.",
+  "next": "Timeline on memcached.log and babysitter.log."
+ },
+ {
+  "id": "memcached-crash-sig",
+  "title": "memcached fatal / assertion",
+  "component": "kv",
+  "severity": "high",
+  "files": [
+   "memcached.log"
+  ],
+  "regex": "\\bFATAL\\b|Assertion failed|Caught unhandled exception|Writing minidump|SIGSEGV|SIGABRT",
+  "meaning": "Crash signature in memcached.log; minidump may be in the collection.",
+  "next": "Check for *.dmp files and the log tail."
+ },
+ {
+  "id": "disk-full",
+  "title": "Disk full or write errors",
+  "component": "os",
+  "severity": "high",
+  "files": [
+   "memcached.log",
+   "ns_server.info.log",
+   "ns_server.error.log",
+   "ns_server.indexer.log",
+   "ns_server.babysitter.log"
+  ],
+  "regex": "No space left on device|ENOSPC|Disk write failed",
+  "meaning": "Out of disk space.",
+  "next": "df section in couchbase.log."
+ },
+ {
+  "id": "node-down-health",
+  "title": "Node marked unhealthy / unreachable",
+  "component": "ns_server",
+  "severity": "medium",
+  "files": [
+   "ns_server.info.log",
+   "ns_server.error.log"
+  ],
+  "regex": "is not responding|Lost connection to|ns_node_disco.*nodedown",
+  "meaning": "Cluster manager lost contact with a node.",
+  "next": "Check network and CPU/memory at that time."
+ },
+ {
+  "id": "dcp-conn-errors",
+  "title": "DCP connection errors",
+  "component": "kv/dcp",
+  "severity": "medium",
+  "files": [
+   "memcached.log",
+   "ns_server.info.log",
+   "ns_server.error.log"
+  ],
+  "regex": "Disconnecting .*eq_dcpq|DCP.*(ERROR|failed)",
+  "meaning": "DCP stream problems affect replication, indexing and XDCR.",
+  "next": "Group by connection name in Search."
+ },
+ {
+  "id": "slow-ops",
+  "title": "memcached slow operations",
+  "component": "kv",
+  "severity": "medium",
+  "files": [
+   "memcached.log"
+  ],
+  "regex": "Slow operation",
+  "meaning": "Operations exceeded the slow threshold. Check bucket, command and duration.",
+  "next": "Search 'Slow operation' and look at the cid and duration."
+ },
+ {
+  "id": "conn-limit",
+  "title": "Connection limit hit",
+  "component": "kv",
+  "severity": "medium",
+  "files": [
+   "memcached.log"
+  ],
+  "regex": "Too many open connections|Reached connection limit|No more connections",
+  "meaning": "Clients exhausted the connection budget.",
+  "next": "Check per-bucket connection stats."
+ },
+ {
+  "id": "warmup",
+  "title": "Bucket warmup / slow start",
+  "component": "kv",
+  "severity": "info",
+  "files": [
+   "memcached.log",
+   "ns_server.info.log"
+  ],
+  "regex": "(?i)warmup.*(complete|failed|took)|Warmup completed",
+  "meaning": "Warmup events with durations.",
+  "next": "Compare warmup duration to data size."
+ },
+ {
+  "id": "xdcr-conn-errors",
+  "title": "XDCR connectivity errors",
+  "component": "xdcr",
+  "severity": "high",
+  "files": [
+   "ns_server.goxdcr.log"
+  ],
+  "regex": "Connectivity Errors = \\[\\{|ERRO GOXDCR.*(connection refused|i/o timeout|no such host|dial tcp)",
+  "meaning": "goxdcr cannot reach the target.",
+  "next": "Read the targetNode and error text, then check TLS and DNS."
+ },
+ {
+  "id": "xdcr-tls",
+  "title": "XDCR TLS / certificate errors",
+  "component": "xdcr",
+  "severity": "high",
+  "files": [
+   "ns_server.goxdcr.log",
+   "ns_server.xdcr_target.log"
+  ],
+  "regex": "TLS handshake failed|x509:|tls: (bad|failed|handshake)|certificate (has expired|signed by unknown|is not valid)",
+  "meaning": "Certificate or TLS handshake failures.",
+  "next": "Compare cert expiry and SAN to the host name used."
+ },
+ {
+  "id": "xdcr-pipeline-stopped",
+  "title": "XDCR pipeline stopped / restarted",
+  "component": "xdcr",
+  "severity": "medium",
+  "files": [
+   "ns_server.goxdcr.log"
+  ],
+  "regex": "Stopping replications|PipelineMgr.*(Stopping|Stopped|Restarting) |pipeline .* (stopped|is restarting)",
+  "meaning": "Replication pipeline lifecycle events.",
+  "next": "Timeline on goxdcr.log around the first hit."
+ },
+ {
+  "id": "xdcr-backlog",
+  "title": "XDCR changes_left (backlog samples)",
+  "component": "xdcr",
+  "severity": "info",
+  "files": [
+   "ns_server.goxdcr.log"
+  ],
+  "regex": "StatsMgr: pipelineFullTopic=.*changes_left=[1-9][0-9]{5,}",
+  "meaning": "Backlog above 100k mutations per sample.",
+  "next": "Check docs_written vs docs_processed over time."
+ },
+ {
+  "id": "xdcr-missing-target",
+  "title": "XDCR target collection missing",
+  "component": "xdcr",
+  "severity": "medium",
+  "files": [
+   "ns_server.goxdcr.log"
+  ],
+  "regex": "^(?!.*Stats for pipeline).*(unknown collection|UNKNOWN_COLLECTION|ErrorUnknownCollection|target collection .*(not found|does not exist))",
+  "meaning": "Mapped collections are absent on the target.",
+  "next": "Compare goxdcr_replications.json mapping to target collections.",
+  "flags": [
+   "-P"
+  ]
+ },
+ {
+  "id": "index-errors",
+  "title": "Indexer errors / panics",
+  "component": "gsi",
+  "severity": "medium",
+  "files": [
+   "ns_server.indexer.log"
+  ],
+  "regex": "\\[Fatal\\]|panic:|\\[Error\\]",
+  "meaning": "Indexer process errors.",
+  "next": "Timeline on indexer.log and projector.log."
+ },
+ {
+  "id": "index-rollback",
+  "title": "Index rollback to zero",
+  "component": "gsi",
+  "severity": "medium",
+  "files": [
+   "ns_server.indexer.log",
+   "ns_server.projector.log"
+  ],
+  "regex": "Rollback Started|rolling back to|Initiating rollback",
+  "meaning": "Index rolled back, often after failover.",
+  "next": "Correlate with failover time."
+ },
+ {
+  "id": "query-errors",
+  "title": "Query service errors / timeouts",
+  "component": "query",
+  "severity": "medium",
+  "files": [
+   "ns_server.query.log"
+  ],
+  "regex": "\\[ERROR\\]|\\bpanic\\b|Request timed out",
+  "meaning": "Query engine errors.",
+  "next": "Check completed_requests and system:active_requests."
+ },
+ {
+  "id": "eventing-errors",
+  "title": "Eventing errors",
+  "component": "eventing",
+  "severity": "medium",
+  "files": [
+   "ns_server.eventing.log"
+  ],
+  "regex": "\\bERRO\\b|\\bpanic\\b|Bootstrap.*fail|Handler.*(crash|fail)",
+  "meaning": "Eventing handler or service errors.",
+  "next": "Read the handler name and exception text."
+ },
+ {
+  "id": "fts-errors",
+  "title": "Search (FTS) errors",
+  "component": "fts",
+  "severity": "medium",
+  "files": [
+   "ns_server.fts.log"
+  ],
+  "regex": "\\bpanic\\b|\\bERRO\\b|\\[FATAL\\]",
+  "meaning": "FTS errors or panics.",
+  "next": "Check cbft logs for index name."
+ },
+ {
+  "id": "auth-failures",
+  "title": "Authentication failures",
+  "component": "security",
+  "severity": "medium",
+  "files": [
+   "ns_server.info.log",
+   "ns_server.http_access.log"
+  ],
+  "regex": "Invalid username or password|Authentication failed|\\\"(GET|POST|PUT|DELETE) /(?!pools )[^\\\"]*\\\" 401 ",
+  "meaning": "Bad credentials or expired tokens.",
+  "next": "Access tab: group by client and user for 401.",
+  "flags": [
+   "-P"
+  ]
+ },
+ {
+  "id": "cert-expiry",
+  "title": "Certificate warnings",
+  "component": "security",
+  "severity": "high",
+  "files": [
+   "ns_server.info.log",
+   "ns_server.error.log"
+  ],
+  "regex": "certificate.*(will expire|has expired|is expired)|x509: certificate has expired",
+  "meaning": "Certificate expiry warnings or failures. Compare the expiry timestamp in the line to the log time range.",
+  "next": "Check cert not-after dates."
+ },
+ {
+  "id": "cgroup-throttle",
+  "title": "CPU throttling or cgroup limits",
+  "component": "os",
+  "severity": "info",
+  "files": [
+   "couchbase.log"
+  ],
+  "regex": "nr_throttled [1-9][0-9]+|throttled_time [1-9][0-9]+",
+  "meaning": "Container CPU throttling counters in cgroup stats.",
+  "next": "Compare to CPU limit in pod spec."
+ },
+ {
+  "id": "http-5xx",
+  "title": "HTTP 5xx on REST",
+  "component": "ns_server",
+  "severity": "medium",
+  "files": [
+   "ns_server.http_access.log"
+  ],
+  "regex": "\" 5\\d\\d [0-9-]+ ",
+  "meaning": "Server errors returned to REST callers.",
+  "next": "Access tab: pattern '\" 5', group by endpoint."
+ }
+]
