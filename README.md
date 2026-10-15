@@ -70,9 +70,20 @@ See [`docs/jira-mcp-setup.md`](docs/jira-mcp-setup.md) for manual Jira MCP confi
 
 ---
 
-## Quick Start
+## Using the tools
 
-The first time you use the repo in a session (or after pulling changes), it helps to have Claude sanity-check the setup before jumping into a ticket:
+### 1. Start a Claude Code session in the repo
+
+```bash
+cd cbsupport_tools
+claude
+```
+
+Start Claude Code from the repo folder so it loads the agents in `.claude/agents/`, the log analysis skill and `.mcp.json`. The first time, approve the `couchbase-guru` docs MCP server when it asks. Make sure you are on the Couchbase VPN and logged in to AWS SSO (`aws sso login --profile <your profile>`).
+
+### 2. First prompt of a session: check the setup
+
+The first time you use the repo in a session (or after pulling changes), have Claude check the setup before you jump into a ticket:
 
 ```
 Before we start, review this repo: confirm the agents in .claude/agents are readable,
@@ -85,13 +96,39 @@ run its own QA checks before producing analysis_report_vN.md. Tell me what's mis
 anything, before we analyze a ticket.
 ```
 
-Once that comes back clean, analyze a ticket with:
+### 3. Analyze a ticket
 
 ```
 Analyze ticket 76783
 ```
 
-Run that prompt in Claude Code — the orchestrator (`ticket-agents-manager`) handles the full pipeline automatically: downloads logs, identifies root cause, researches docs/MBs, QA-checks the findings, and drafts a customer response.
+The orchestrator (`ticket-agents-manager`) runs the whole pipeline: the analyzer downloads the logs itself (do not download them first), finds the root cause, the docs and source experts research it, the manager QA-checks the findings, and you get a report with a customer response draft. Wait for it to finish; it can take a while on large collections.
+
+### 4. Work the ticket with follow-up prompts
+
+Typical things to ask in the same session:
+
+| You want | Example prompt |
+|----------|----------------|
+| Re-analyze after the customer replied or uploaded new logs | `Customer replied on 76783, re-analyze. Their new message is the latest one in the ticket.` |
+| Check one claim against the raw logs | `Verify the claim about the failover time on node 0003 with the command and the raw output.` |
+| Customer reply draft | `Draft the customer response for 76783 using the findings in analysis_report_v3.md.` |
+| CBSE draft for engineering | `Draft a CBSE for 76783: questions first, then background, then analysis with the commands and outputs.` |
+| Read what engineering answered | `Read CBSE-12345 and tell me what engineering said and what we can tell the customer.` |
+| Test a command before sending it | `Test the commands in the draft against a local test setup before I send it.` |
+
+Tell Claude your preferences once (greeting, sign-off, wording, what not to mention to the customer). Edit the drafts yourself; they are starting points.
+
+### 5. What you get and where
+
+Output goes to `$DIR_TICKETS/<ticket>/` (see "Output Files" below). Every run writes a new version (`analysis_report_v1.md`, `v2`, ...) and never overwrites an earlier one.
+
+### Rules of thumb
+
+- Customer responses and CBSE texts are drafts. Nothing is posted to Jira, Zendesk or Supportal by the agents; you send them.
+- Ask for the command and verbatim output behind every claim, and spot-check them against the raw logs before sending.
+- Say what you already know in the prompt (for example "the customer says X") so the analysis starts from it, and give the CBSE or MB number when engineering has already answered.
+- If a run misses something, ask a targeted follow-up with the node, file and time window instead of starting over.
 
 ---
 
