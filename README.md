@@ -2,6 +2,29 @@
 
 Couchbase support ticket analysis tools with AI-powered agents.
 
+## Prerequisites
+
+Install these before running `setup.sh` (it checks for them and tells you what is missing):
+
+| Tool | Why | Install |
+|------|-----|---------|
+| `git`, `curl`, `python3`, `wget`, `unzip`, `tar` | ticket download scripts | `brew install git curl python wget unzip` (Linux: your package manager) |
+| `rg` (ripgrep), `jq` | log search and JSON handling | `brew install ripgrep jq` |
+| `aws` (AWS CLI v2) | SSO login and S3 downloads | `brew install awscli` |
+| `s3dl` | downloads Supportal-hosted ticket files | `pip install git+https://github.com/couchbaselabs/s3dl.git` |
+| `uv` (`uvx`) | runs the `couchbase-guru` docs MCP server in `.mcp.json` | `brew install uv` |
+| `tshark` (optional) | pcap analysis | `brew install wireshark` |
+| `node` / `npx` (optional) | only for the optional Jira MCP server | `brew install node` |
+| Claude Code | runs the agents in `.claude/agents/` | https://docs.claude.com/en/docs/claude-code |
+
+You also need:
+- Couchbase VPN access (the scripts check that `supportal.couchbase.com` is reachable).
+- An AWS SSO profile for the Supportal bucket (see below).
+- A Jira API token that can read the CBSE project (`setup.sh` tests this).
+- GitHub membership in the `couchbase`, `couchbaselabs`, `couchbasecloud` and `membase` orgs if you use `cb-source-tool/` (see its README).
+
+---
+
 ## New Machine Setup
 
 Clone the repo and run the setup script once:
@@ -28,26 +51,20 @@ The script covers:
 
    ```ini
    [profile supportal]
-   sso_start_url  = https://couchbase.awsapps.com/start
+   sso_start_url  = <your SSO start URL>
    sso_region     = us-east-1
    sso_account_id = <your-account-id>
    sso_role_name  = <your-role-name>
    region         = us-east-1
    ```
 
-   `setup.sh` checks whether the profile you named already exists here and prints this block for you to fill in if it doesn't.
+   Use the start URL that your AWS SSO sign-in page shows (the `aws sso login` output prints it, for example `https://d-xxxxxxxxxx.awsapps.com/start`). `setup.sh` checks whether the profile you named already exists here and prints this block for you to fill in if it doesn't.
 
 2. **Authenticate**, using whatever profile name you configured in step 1 and told `setup.sh` about:
 
    ```bash
    aws sso login --profile supportal   # replace 'supportal' with your actual profile name
    ```
-
-Install required CLI tools if missing:
-
-```
-brew install ripgrep jq awscli wireshark   # wireshark installs tshark
-```
 
 See [`docs/jira-mcp-setup.md`](docs/jira-mcp-setup.md) for manual Jira MCP configuration.
 
@@ -93,9 +110,25 @@ Run that prompt in Claude Code — the orchestrator (`ticket-agents-manager`) ha
 
 ### Scripts
 
-- `prep_ticket_aws.sh` — download ticket data and cbcollect logs from AWS S3
-- `extract_ticket_timeline.sh` — extract ticket timeline JSON
+- `prep_ticket_aws.sh` — download ticket data and cbcollect logs from AWS S3 (`bash prep_ticket_aws.sh s3init` logs in to AWS SSO first)
+- `extract_ticket_timeline.sh` — extract ticket timeline JSON (rewrites `ticket_<n>.raw` and `ticket_timeline.json` in the ticket folder)
 - `cb-source-tool/` — Couchbase source code analysis tool
+
+### Other folders
+
+- `skills/` — SME reference notes (CAO, KV, backup) that the agents read.
+- `agents/cao-sme.md` — standalone CAO and Kubernetes SME agent definition (not installed by default; copy it into `.claude/agents/` to use it).
+
+### Check your setup
+
+After `setup.sh`, these should all succeed:
+
+```bash
+aws sso login --profile "$AWS_PROFILE"          # source .env first, or type the profile name
+aws sts get-caller-identity --profile <profile>
+bash extract_ticket_timeline.sh <any ticket number>   # fetches the ticket text only, no downloads
+```
+
 
 ---
 
