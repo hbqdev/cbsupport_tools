@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# prep_ticket.sh - Standalone ticket preparation tool for Couchbase Support
+# prep_ticket_aws.sh - Standalone ticket preparation tool for Couchbase Support
 #
 # Downloads ticket metadata, snapshots, attachments, and ticket files from
 # Supportal/Zendesk into an organized directory structure.
 #
 # Usage:
-#   ./prep_ticket.sh <ticket_number>
-#   ./prep_ticket.sh s3init              # Authenticate AWS SSO before first use
+#   ./prep_ticket_aws.sh <ticket_number>
+#   ./prep_ticket_aws.sh s3init              # Authenticate AWS SSO before first use
 #
 # Example:
-#   ./prep_ticket.sh s3init              # One-time SSO login
-#   ./prep_ticket.sh 75546
+#   ./prep_ticket_aws.sh s3init          # One-time SSO login
+#   ./prep_ticket_aws.sh 75546
 #
 ###############################################################################
 # REQUIREMENTS

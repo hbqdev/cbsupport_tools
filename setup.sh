@@ -25,10 +25,43 @@ prompt_with_default() {
   fi
 }
 
+# Portable replacement for "sed -i" (BSD and GNU sed take different arguments).
+# Replaces or appends KEY="VALUE" in $ENV_FILE and keeps every other line.
+set_env_var() {
+  local key="$1" val="$2" tmp
+  tmp="$(mktemp)"
+  if [[ -f "$ENV_FILE" ]]; then
+    grep -v "^${key}=" "$ENV_FILE" > "$tmp" || true
+  fi
+  printf '%s="%s"\n' "$key" "$val" >> "$tmp"
+  mv "$tmp" "$ENV_FILE"
+}
+
+have() { command -v "$1" &>/dev/null; }
+
 echo ""
 bold "cbsupport_tools — one-time setup"
 info "Repo: $REPO_ROOT"
 echo ""
+
+# ── 0. Required tools ─────────────────────────────────────────────────────────
+echo ""
+bold "0. Required tools"
+MISSING=0
+for t in "git:brew install git" "curl:brew install curl" "rg:brew install ripgrep" "jq:brew install jq" \
+         "aws:brew install awscli" "wget:brew install wget" "unzip:brew install unzip" "python3:brew install python" \
+         "s3dl:pip install git+https://github.com/couchbaselabs/s3dl.git"; do
+  name="${t%%:*}"; hint="${t#*:}"
+  if have "$name"; then ok "$name"; else err "$name not found. Install: $hint"; MISSING=1; fi
+done
+for t in "uvx:brew install uv (couchbase-guru docs MCP in .mcp.json)" "npx:brew install node (only for the optional Jira MCP)" \
+         "tshark:brew install wireshark (only for pcap analysis)"; do
+  name="${t%%:*}"; hint="${t#*:}"
+  if have "$name"; then ok "$name"; else warn "$name not found (optional). Install: $hint"; fi
+done
+if [[ "$MISSING" -eq 1 ]]; then
+  warn "Install the missing required tools above, then re-run setup.sh (it is safe to re-run)."
+fi
 
 # ── 1. User name (for ticket response signatures) ─────────────────────────────
 bold "1. User identity"
@@ -65,25 +98,9 @@ else
   ok "Directory exists: $DIR_TICKETS"
 fi
 
-# Write / update .env
-if [[ -f "$ENV_FILE" ]]; then
-  # Update existing line or append
-  if grep -q '^DIR_TICKETS=' "$ENV_FILE"; then
-    sed -i '' "s|^DIR_TICKETS=.*|DIR_TICKETS=$DIR_TICKETS|" "$ENV_FILE"
-  else
-    echo "DIR_TICKETS=$DIR_TICKETS" >> "$ENV_FILE"
-  fi
-  if grep -q '^BASE_DIR=' "$ENV_FILE"; then
-    sed -i '' "s|^BASE_DIR=.*|BASE_DIR=$DIR_TICKETS|" "$ENV_FILE"
-  else
-    echo "BASE_DIR=$DIR_TICKETS" >> "$ENV_FILE"
-  fi
-else
-  cat > "$ENV_FILE" << EOF
-DIR_TICKETS=$DIR_TICKETS
-BASE_DIR=$DIR_TICKETS
-EOF
-fi
+# Write / update .env (keeps other lines; quotes values so paths with spaces work)
+set_env_var DIR_TICKETS "$DIR_TICKETS"
+set_env_var BASE_DIR "$DIR_TICKETS"
 ok "Wrote DIR_TICKETS and BASE_DIR to $ENV_FILE"
 
 # ── 3. AWS SSO credentials ────────────────────────────────────────────────────
@@ -100,11 +117,7 @@ DEFAULT_PROFILE="${EXISTING_AWS_PROFILE:-supportal}"
 AWS_PROFILE_NAME="$(prompt_with_default "AWS SSO profile name" "$DEFAULT_PROFILE")"
 
 # Write to .env
-if grep -q '^AWS_PROFILE=' "$ENV_FILE" 2>/dev/null; then
-  sed -i '' "s|^AWS_PROFILE=.*|AWS_PROFILE=$AWS_PROFILE_NAME|" "$ENV_FILE"
-else
-  echo "AWS_PROFILE=$AWS_PROFILE_NAME" >> "$ENV_FILE"
-fi
+set_env_var AWS_PROFILE "$AWS_PROFILE_NAME"
 ok "Wrote AWS_PROFILE to $ENV_FILE"
 
 # Check if profile is configured in AWS config
@@ -117,7 +130,7 @@ else
   info "Add it manually to ~/.aws/config:"
   cat << AWSCFG
     [profile $AWS_PROFILE_NAME]
-    sso_start_url  = https://couchbase.awsapps.com/start
+    sso_start_url  = <your SSO start URL, see the README>
     sso_region     = us-east-1
     sso_account_id = <your-account-id>
     sso_role_name  = <your-role-name>
@@ -171,6 +184,15 @@ JIRA_RC=$?
 set -e
 if [[ $JIRA_RC -eq 0 ]]; then
   ok "Jira API works — MB-65738: $JIRA_TEST"
+  # MB is public. CBSE is private, so check that this token can read it too.
+  CBSE_CODE="$(source "$JIRA_ENV_FILE" && curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
+    -u "$JIRA_USER_EMAIL:$JIRA_API_KEY" -H "Accept: application/json" \
+    "$JIRA_INSTANCE_URL/rest/api/2/project/CBSE" || true)"
+  if [[ "$CBSE_CODE" == "200" ]]; then
+    ok "Jira token can read the CBSE project"
+  else
+    warn "Jira token cannot read the CBSE project (HTTP ${CBSE_CODE:-none}). CBSE tickets will not load."
+  fi
 else
   warn "Jira test failed. Check your email/API key."
   info "You can rerun this script or edit $JIRA_ENV_FILE manually."
@@ -231,6 +253,6 @@ echo ""
 info "Next steps:"
 info "  1. Authenticate AWS:  aws sso login --profile $AWS_PROFILE_NAME"
 info "  2. Test a ticket:     bash prep_ticket_aws.sh <ticket-number>"
-info "  3. Run an analysis in Claude Code or Copilot:"
+info "  3. Run an analysis in Claude Code:"
 info "     Analyze ticket <number>"
 echo ""
