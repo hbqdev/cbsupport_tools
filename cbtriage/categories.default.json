@@ -1,0 +1,612 @@
+{
+ "version": 1,
+ "categories": [
+  {
+   "id": "failover",
+   "title": "Failover",
+   "group": "Cluster",
+   "desc": "Failover and auto-failover decisions, and why a node was considered down.",
+   "rx": "fail ?over|auto-failover|considered down|node .{0,40}(down|unreachable)|failed over",
+   "files": [
+    "ns_server.info.log",
+    "ns_server.debug.log",
+    "ns_server.error.log",
+    "diag.log",
+    "ns_server.babysitter.log",
+    "memcached.log",
+    "ns_server.http_access.log"
+   ],
+   "keywords": [
+    "failover",
+    "fail over",
+    "failed over",
+    "auto-failover"
+   ],
+   "components": [
+    "cluster management",
+    "cluster manager",
+    "failover"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "systemd_journal.gz (OOM kills, reboots)",
+   "enabled": true,
+   "case_types": [
+    "failover",
+    "node failover"
+   ]
+  },
+  {
+   "id": "rebalance_failed",
+   "title": "Rebalance failed or stuck",
+   "group": "Cluster",
+   "desc": "Why a rebalance failed, stopped or never finished: moves, backfill waits, janitor activity, who stopped it.",
+   "rx": "rebalance.{0,80}(fail|stop|exit|abort|stuck|error)|Still waiting for backfill|Skipping janitor|bad_replicas|stopRebalance|rebalance_failed|janitor_agent.{0,40}(fail|error)",
+   "files": [
+    "ns_server.info.log",
+    "ns_server.debug.log",
+    "ns_server.error.log",
+    "diag.log",
+    "memcached.log",
+    "ns_server.indexer.log",
+    "ns_server.http_access.log"
+   ],
+   "keywords": [
+    "rebalance",
+    "stuck",
+    "stall",
+    "wedge"
+   ],
+   "components": [
+    "cluster management",
+    "cluster manager",
+    "rebalance"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "rebalance_report_*.json (one per rebalance, with the failure reason)",
+   "enabled": true,
+   "case_types": [
+    "rebalance"
+   ]
+  },
+  {
+   "id": "rebalance_all",
+   "title": "Rebalance (everything)",
+   "group": "Cluster",
+   "desc": "Every line about a rebalance: when it started, how far it got, and how it ended.",
+   "rx": "rebalance",
+   "files": [
+    "ns_server.info.log",
+    "ns_server.debug.log",
+    "ns_server.error.log",
+    "diag.log"
+   ],
+   "keywords": [
+    "rebalance"
+   ],
+   "components": [
+    "rebalance"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": [
+    "rebalance"
+   ]
+  },
+  {
+   "id": "restarts",
+   "title": "Restarts and exits",
+   "group": "Cluster",
+   "desc": "Processes that exited, crashed or were restarted.",
+   "rx": "exited|exit status|crash|terminated|restart|killed",
+   "files": [
+    "ns_server.babysitter.log",
+    "ns_server.info.log",
+    "diag.log"
+   ],
+   "keywords": [
+    "crash",
+    "restart",
+    "exited",
+    "panic",
+    "segfault",
+    "unhealthy"
+   ],
+   "components": [
+    "cluster manager"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "systemd_journal.gz",
+   "enabled": true,
+   "case_types": [
+    "crash",
+    "restart"
+   ]
+  },
+  {
+   "id": "memory",
+   "title": "Memory pressure",
+   "group": "Cluster",
+   "desc": "Memory alerts, out-of-memory kills and slow background tasks.",
+   "rx": "cgroup memory use|out of memory|oom|Slow runtime|memory (alert|usage)|high memory",
+   "files": [
+    "ns_server.info.log",
+    "memcached.log"
+   ],
+   "keywords": [
+    "oom",
+    "out of memory",
+    "memory",
+    "killed",
+    "cgroup",
+    "rss"
+   ],
+   "components": [
+    "data",
+    "kv",
+    "service > data"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "systemd_journal.gz, stats.log",
+   "enabled": true,
+   "case_types": [
+    "memory",
+    "oom"
+   ]
+  },
+  {
+   "id": "operator",
+   "title": "Operator (Kubernetes)",
+   "group": "Cluster",
+   "desc": "What the cluster logged about pods, swaps, upgrades and recovery. The operator's own log needs the cbopinfo bundle.",
+   "rx": "operator|pod|kubernetes|k8s|swap|upgrad|recover|delta",
+   "files": [
+    "ns_server.info.log",
+    "ns_server.babysitter.log",
+    "diag.log"
+   ],
+   "keywords": [
+    "operator",
+    "kubernetes",
+    "k8s",
+    "pod",
+    "helm",
+    "autonomous",
+    "swap rebalance"
+   ],
+   "components": [
+    "cao",
+    "cloud-native",
+    "k8s",
+    "kubernetes",
+    "operator"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "cbopinfo bundle: operator log, Kubernetes events, pod YAML (not read by this tool yet)",
+   "enabled": true,
+   "case_types": [
+    "operator",
+    "kubernetes",
+    "upgrade"
+   ]
+  },
+  {
+   "id": "kv",
+   "title": "KV (data service)",
+   "group": "Services",
+   "desc": "Errors, slow operations, memory and connection problems in the data service.",
+   "rx": "\\b(ERROR|CRITICAL|FATAL)\\b|Slow (operation|runtime)|out of memory|too many connections|warmup (fail|slow)|disk.{0,30}(error|fail)",
+   "files": [
+    "memcached.log",
+    "ns_server.info.log",
+    "ns_server.babysitter.log",
+    "diag.log"
+   ],
+   "keywords": [
+    "memcached",
+    "dcp",
+    "kv",
+    "data service",
+    "ep-engine",
+    "bucket",
+    "durability"
+   ],
+   "components": [
+    "bucket",
+    "data",
+    "kv",
+    "memcached",
+    "service > data"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "stats.log, kv_trace.json, systemd_journal.gz",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "xdcr",
+   "title": "XDCR",
+   "group": "Services",
+   "desc": "Errors, failures and timeouts in cross data center replication.",
+   "rx": "(xdcr|goxdcr|replicat\\w*).{0,120}(error|erro|fail|timeout|stop|pause|refused|reset)|\\bERRO\\b.{0,40}GOXDCR",
+   "files": [
+    "ns_server.goxdcr.log",
+    "ns_server.error.log",
+    "ns_server.info.log",
+    "memcached.log",
+    "ns_server.http_access.log",
+    "ns_server.babysitter.log"
+   ],
+   "keywords": [
+    "xdcr",
+    "replication",
+    "replicat",
+    "remote cluster"
+   ],
+   "components": [
+    "replication",
+    "xdcr"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "goxdcr_replications.json, goxdcr_remote_clusters.json, goxdcr_VBTasks.json",
+   "enabled": true,
+   "case_types": [
+    "xdcr",
+    "replication"
+   ]
+  },
+  {
+   "id": "index",
+   "title": "Index",
+   "group": "Services",
+   "desc": "Indexer and projector errors, rollbacks and indexes that are not ready.",
+   "rx": "(panic|fatal|\\berror\\b|rollback|timeout|not ready|unable|failed)",
+   "files": [
+    "ns_server.indexer.log",
+    "ns_server.projector.log",
+    "ns_server.info.log",
+    "memcached.log",
+    "ns_server.query.log"
+   ],
+   "keywords": [
+    "index",
+    "gsi",
+    "indexer",
+    "projector",
+    "plasma"
+   ],
+   "components": [
+    "gsi",
+    "index"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "stats.log",
+   "enabled": true,
+   "case_types": [
+    "index"
+   ]
+  },
+  {
+   "id": "query",
+   "title": "Query",
+   "group": "Services",
+   "desc": "Query service errors, timeouts and slow requests.",
+   "rx": "(error|timeout|failed|panic|cancel|slow|exceed)",
+   "files": [
+    "ns_server.query.log",
+    "ns_server.indexer.log",
+    "ns_server.info.log",
+    "ns_server.http_access.log"
+   ],
+   "keywords": [
+    "query",
+    "n1ql",
+    "sql++",
+    "prepared",
+    "timeout"
+   ],
+   "components": [
+    "n1ql",
+    "query",
+    "sql"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "completed_requests.json, active_requests.json, prepareds.json",
+   "enabled": true,
+   "case_types": [
+    "query",
+    "performance"
+   ]
+  },
+  {
+   "id": "eventing",
+   "title": "Eventing",
+   "group": "Services",
+   "desc": "Eventing service errors.",
+   "rx": "(error|exception|fail|panic|timeout)",
+   "files": [
+    "ns_server.eventing.log",
+    "ns_server.info.log"
+   ],
+   "keywords": [
+    "eventing",
+    "function"
+   ],
+   "components": [
+    "eventing"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "fts",
+   "title": "Search (FTS)",
+   "group": "Services",
+   "desc": "Full text search errors.",
+   "rx": "(error|exception|fail|panic|timeout)",
+   "files": [
+    "ns_server.fts.log",
+    "ns_server.info.log"
+   ],
+   "keywords": [
+    "fts",
+    "full text",
+    "search index"
+   ],
+   "components": [
+    "fts",
+    "search"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "analytics",
+   "title": "Analytics",
+   "group": "Services",
+   "desc": "Analytics service errors and warnings.",
+   "rx": "(error|exception|fail|panic|timeout)",
+   "files": [
+    "ns_server.analytics_error.log",
+    "ns_server.analytics_warn.log",
+    "ns_server.analytics_info.log",
+    "ns_server.info.log"
+   ],
+   "keywords": [
+    "analytics",
+    "cbas"
+   ],
+   "components": [
+    "analytics",
+    "cbas"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "security",
+   "title": "Security (auth, certificates)",
+   "group": "General",
+   "desc": "Authentication failures, permission problems, certificate and TLS issues.",
+   "rx": "auth.{0,20}(fail|denied)|unauthori[sz]ed|forbidden|certificate|tls|handshake|expired|rbac|permission",
+   "files": [
+    "ns_server.error.log",
+    "ns_server.info.log",
+    "ns_server.http_access.log",
+    "memcached.log"
+   ],
+   "keywords": [
+    "certificate",
+    "tls",
+    "ssl",
+    "auth",
+    "login",
+    "permission",
+    "rbac",
+    "expired"
+   ],
+   "components": [
+    "auth",
+    "ldap",
+    "rbac",
+    "security",
+    "tls"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": [
+    "security",
+    "authentication",
+    "certificate"
+   ]
+  },
+  {
+   "id": "errors",
+   "title": "Errors and crashes",
+   "group": "General",
+   "desc": "Anything logged as an error, critical or fatal, or a crash.",
+   "rx": "\\b(error|critical|fatal|panic|crash)",
+   "files": [
+    "ns_server.error.log",
+    "ns_server.info.log",
+    "memcached.log"
+   ],
+   "keywords": [
+    "error",
+    "exception",
+    "fail"
+   ],
+   "components": [],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "warnings",
+   "title": "Warnings",
+   "group": "General",
+   "desc": "Everything logged as a warning.",
+   "rx": "\\bwarn",
+   "files": [
+    "ns_server.info.log",
+    "memcached.log"
+   ],
+   "keywords": [],
+   "components": [],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "slow",
+   "title": "Slow operations",
+   "group": "General",
+   "desc": "Slow operations and slow runtimes in the data service.",
+   "rx": "Slow (operation|runtime)",
+   "files": [
+    "memcached.log"
+   ],
+   "keywords": [
+    "slow",
+    "latency",
+    "timeout",
+    "timed out",
+    "stall"
+   ],
+   "components": [
+    "data",
+    "kv",
+    "service > data"
+   ],
+   "counts": false,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": [
+    "performance",
+    "latency"
+   ]
+  },
+  {
+   "id": "rest_user",
+   "title": "REST calls by user",
+   "group": "REST access",
+   "desc": "Which users call the REST API, and how often.",
+   "rx": "^\\S+ - (\\S+) \\[",
+   "files": [
+    "ns_server.http_access.log"
+   ],
+   "keywords": [
+    "rest",
+    "api",
+    "curl",
+    "http",
+    "rbac",
+    "permission"
+   ],
+   "components": [],
+   "counts": true,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "rest_endpoint",
+   "title": "REST calls by endpoint",
+   "group": "REST access",
+   "desc": "Which endpoints are called.",
+   "rx": "\"((?:GET|POST|PUT|DELETE|PATCH) /[^ ?]*)",
+   "files": [
+    "ns_server.http_access.log"
+   ],
+   "keywords": [],
+   "components": [],
+   "counts": true,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "rest_client",
+   "title": "REST calls by client address",
+   "group": "REST access",
+   "desc": "Which addresses make the calls.",
+   "rx": "^(\\S+) - ",
+   "files": [
+    "ns_server.http_access.log"
+   ],
+   "keywords": [],
+   "components": [],
+   "counts": true,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  },
+  {
+   "id": "rest_status",
+   "title": "REST responses by status",
+   "group": "REST access",
+   "desc": "How many calls succeeded or failed, by HTTP status.",
+   "rx": "\" (\\d{3}) ",
+   "files": [
+    "ns_server.http_access.log"
+   ],
+   "keywords": [],
+   "components": [],
+   "counts": true,
+   "fixed": false,
+   "pcre2": false,
+   "extra": "",
+   "enabled": true,
+   "case_types": []
+  }
+ ]
+}

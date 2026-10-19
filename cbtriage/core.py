@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from fnmatch import fnmatch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ISO_RE = re.compile(r"(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)?")
+ISO_RE = re.compile(r"(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:[.,](\d+))?(Z|[+-]\d\d:\d\d)?")
 ACC_TS_RE = re.compile(r"\[(\d\d)/(\w{3})/(\d{4}):(\d\d):(\d\d):(\d\d) ([+-]\d{4})\]")
 ACC_RE = re.compile(r'^(\S+) - (\S+) \[([^\]]+)\] "(\S+) (\S+)[^"]*" (\d{3}) (\S+) .*?(\d+)$')
 MONTHS = {m: i + 1 for i, m in enumerate("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split())}
@@ -59,15 +59,127 @@ def fmt_ts(t):
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "Z" if t else ""
 
 
+# ---------------------------------------------------------------- time expressions typed by a person
+MONTH_NAMES = {n.lower(): i + 1 for i, n in enumerate(
+    "January February March April May June July August September October November December".split())}
+for _m, _i in list(MONTHS.items()):
+    MONTH_NAMES[_m.lower()] = _i
+MONTH_NAMES["sept"] = 9
+_TZ = r"\s*(Z|[+-]\d\d:?\d\d)?"
+_T_ISO = re.compile(r"^(\d{4})(?:[-/](\d\d)(?:[-/](\d\d)(?:[T _](\d\d)(?::(\d\d?)(?::(\d\d?)(?:[.,](\d+))?)?)?)?)?)?" + _TZ + "$")
+_T_COMPACT = re.compile(r"^(\d{4})(\d\d)(\d\d)(?:[-_T ]?(\d\d)(?:(\d\d)(?:(\d\d))?)?)?" + _TZ + "$")
+_T_ACC = re.compile(r"^(\d\d)/(\w{3})/(\d{4})(?::(\d\d)(?::(\d\d)(?::(\d\d))?)?)?\s*([+-]\d{4})?$")
+_T_NAME_MD = re.compile(r"^(\w{3,9})\s+(\d{1,2}),?\s+(\d{4})(?:[ T,]+(\d\d)(?::(\d\d)(?::(\d\d))?)?)?" + _TZ + "$")
+_T_NAME_DM = re.compile(r"^(\d{1,2})\s+(\w{3,9})\s+(\d{4})(?:[ T,]+(\d\d)(?::(\d\d)(?::(\d\d))?)?)?" + _TZ + "$")
+_T_NAME_MY = re.compile(r"^(\w{3,9})\s+(\d{4})$")
+
+
+def _tz_secs(tz):
+    if not tz or tz == "Z":
+        return 0
+    sign = 1 if tz[0] == "+" else -1
+    d = tz[1:].replace(":", "")
+    return sign * (int(d[:2]) * 3600 + int(d[2:4]) * 60)
+
+
+def _span(y, mo=None, d=None, h=None, mi=None, s=None, frac=None, tz=0, mi_digits=2, s_digits=2):
+    """(start, end_exclusive, iso_prefix) for the unit the expression was precise to."""
+    def mk(y, mo, d, h, mi, s):
+        return datetime(y, mo, d, h, mi, s, tzinfo=timezone.utc).timestamp() - tz
+    mo1, d1, h1, mi1, s1 = mo or 1, d or 1, h or 0, mi or 0, s or 0
+    start = mk(y, mo1, d1, h1, mi1, s1)
+    if frac is not None:
+        width = 10 ** -len(frac)
+        start += float("0." + frac) if frac else 0
+        end, prefix = start + width, None
+    elif s is not None:
+        end = start + (10 if s_digits == 1 else 1)
+        prefix = "%04d-%02d-%02dT%02d:%02d:%s" % (y, mo1, d1, h1, mi1, ("%d" % (s // 10)) if s_digits == 1 else "%02d" % s)
+    elif mi is not None:
+        end = start + (600 if mi_digits == 1 else 60)
+        prefix = "%04d-%02d-%02dT%02d:%s" % (y, mo1, d1, h1, ("%d" % (mi // 10)) if mi_digits == 1 else "%02d" % mi)
+    elif h is not None:
+        end, prefix = start + 3600, "%04d-%02d-%02dT%02d" % (y, mo1, d1, h1)
+    elif d is not None:
+        end, prefix = start + 86400, "%04d-%02d-%02d" % (y, mo1, d1)
+    elif mo is not None:
+        ny, nm = (y + 1, 1) if mo == 12 else (y, mo + 1)
+        end, prefix = mk(ny, nm, 1, 0, 0, 0), "%04d-%02d" % (y, mo)
+    else:
+        end, prefix = mk(y + 1, 1, 1, 0, 0, 0), "%04d" % y
+    return start, end, (prefix if not tz else None)
+
+
+def parse_time_point(expr):
+    """Parse one time in any format that appears in the logs, to the span it names: (start, end_exclusive, iso_prefix).
+    '2026-09' is all of September; '2026-10-13 01:3' is 01:30 to 01:39; no timezone means UTC."""
+    x = expr.strip().strip("[]").strip()
+    if not x:
+        raise ValueError("empty time")
+    m = re.match(r"^(\d{10})(?:\.(\d+))?$", x)
+    if m:
+        t = float(x)
+        return t, t + (10 ** -len(m.group(2)) if m.group(2) else 1), None
+    if re.match(r"^\d{13}$", x):
+        t = int(x) / 1000.0
+        return t, t + 0.001, None
+    m = _T_ISO.match(x)
+    if m:
+        y, mo, d, h, mi, s, frac, tz = m.groups()
+        md, sd = len(mi or "00"), len(s or "00")
+        vals = [int(v) if v is not None else None for v in (y, mo, d, h, mi, s)]
+        if vals[4] is not None and md == 1:
+            vals[4] *= 10
+        if vals[5] is not None and sd == 1:
+            vals[5] *= 10
+        return _span(*vals, frac=frac, tz=_tz_secs(tz), mi_digits=md, s_digits=sd)
+    m = _T_COMPACT.match(x)
+    if m:
+        y, mo, d, h, mi, s, tz = m.groups()
+        v = [int(a) if a is not None else None for a in (y, mo, d, h, mi, s)]
+        return _span(*v, tz=_tz_secs(tz))
+    m = _T_ACC.match(x)
+    if m:
+        d, mon, y, h, mi, s, tz = m.groups()
+        if mon.lower() not in MONTH_NAMES:
+            raise ValueError("unknown month %r" % mon)
+        v = [int(y), MONTH_NAMES[mon.lower()], int(d)] + [int(a) if a is not None else None for a in (h, mi, s)]
+        return _span(*v, tz=_tz_secs(tz))
+    for rx, order in ((_T_NAME_MD, "mdy"), (_T_NAME_DM, "dmy")):
+        m = rx.match(x)
+        if m:
+            g = m.groups()
+            mon, d, y = (g[0], g[1], g[2]) if order == "mdy" else (g[1], g[0], g[2])
+            if mon.lower() not in MONTH_NAMES:
+                raise ValueError("unknown month %r" % mon)
+            v = [int(y), MONTH_NAMES[mon.lower()], int(d)] + [int(a) if a is not None else None for a in g[3:6]]
+            return _span(*v, tz=_tz_secs(g[6]))
+    m = _T_NAME_MY.match(x)
+    if m and m.group(1).lower() in MONTH_NAMES:
+        return _span(int(m.group(2)), MONTH_NAMES[m.group(1).lower()])
+    raise ValueError("cannot read %r as a time. Examples: 2026-09, 2026-10-13, 2026-10-13 01:30, "
+                     "2026-10-13T01:3, 13/Oct/2026:01, Oct 13 2026 01:30, 1760319000, 2026-10-13 01:30 to 02:00" % expr)
+
+
+def parse_time_expr(expr):
+    """'A' or 'A to B' (or 'A..B'). Returns (start, end_exclusive, iso_prefix_or_None). B may be a time of day on A's date."""
+    parts = re.split(r"\s+to\s+|\s*\.\.\s*|\s+until\s+", expr.strip(), maxsplit=1)
+    a = parse_time_point(parts[0])
+    if len(parts) == 1:
+        return a
+    b_txt = parts[1].strip()
+    if re.match(r"^\d\d(:\d\d){0,2}$", b_txt):  # '01:30 to 02:00' means the same day
+        day = fmt_ts(a[0])[:10]
+        b_txt = day + " " + b_txt
+    b = parse_time_point(b_txt)
+    if b[1] <= a[0]:
+        raise ValueError("the end is before the start")
+    return a[0], b[1], None
+
+
 def parse_user_ts(s):
-    """Accept 2026-10-03T13:12:43Z, '2026-10-03 13:12:43', or with +02:00 offset. No tz means UTC."""
-    s = s.strip().replace(" ", "T")
-    if len(s) == 16:
-        s += ":00"
-    t = parse_ts(s if ISO_RE.search(s) else "")
-    if t is None:
-        raise ValueError("bad time: %r" % s)
-    return t
+    """Start of the time named by s; accepts every format parse_time_expr does."""
+    return parse_time_point(s)[0]
 
 
 # ---------------------------------------------------------------- discovery
