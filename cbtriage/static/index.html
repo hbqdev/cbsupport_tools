@@ -4,205 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cbtriage</title>
-<style>
-:root{--bg:#f6f7f9;--panel:#fff;--ink:#1b1f24;--mut:#667085;--line:#e3e6ea;--brand:#ec1018;--hi:#d92d20;--med:#dc6803;--low:#667085;--info:#2e90fa;--code:#f1f3f5}
-@media (prefers-color-scheme:dark){:root{--bg:#14161a;--panel:#1c1f24;--ink:#e8eaed;--mut:#98a2b3;--line:#2c3037;--code:#101216}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-header{display:flex;gap:10px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
-header b{color:var(--brand);font-size:16px;margin-right:6px}
-select,input,button,textarea{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
-button{cursor:pointer}button.pri{background:var(--brand);color:#fff;border-color:var(--brand)}
-nav{display:flex;gap:2px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
-nav button{border:0;border-bottom:2px solid transparent;border-radius:0;padding:10px 14px;background:none;color:var(--mut)}
-nav button.on{color:var(--ink);border-color:var(--brand);font-weight:600}
-main{padding:16px;max-width:1500px;margin:0 auto}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-label{color:var(--mut);font-size:12px}
-table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600;font-size:12px}
-code,pre,.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
-pre{background:var(--code);padding:8px 10px;border-radius:6px;overflow:auto;margin:6px 0;white-space:pre-wrap;word-break:break-all;max-height:320px}
-.tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;color:#fff}
-.high{background:var(--hi)}.medium{background:var(--med)}.low{background:var(--low)}.info{background:var(--info)}
-.mut{color:var(--mut)}.warn{color:var(--med)}.sm{font-size:12px}
-details summary{cursor:pointer;padding:2px 0}
-.pin{float:right}.err{color:var(--hi)}
-.ln{white-space:pre-wrap;word-break:break-all}
-.flt{border-left:3px solid var(--line);padding-left:10px;margin:6px 0}
-#cart{margin-left:auto}
-.spin{color:var(--mut);padding:20px}
-</style>
+<link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header>
-  <b>cbtriage</b>
-  <label>Ticket</label><select id="ticket"></select>
-  <label>Collection</label><select id="coll"></select>
-  <button id="reload" title="Re-read inventory and findings">Reload</button>
-  <span id="cart"><button class="pri" id="saveRep">Pinned: <span id="cnt">0</span> &middot; Save report</button></span>
-</header>
-<nav id="tabs"></nav>
-<main id="main"></main>
-
-<script>
-const $=s=>document.querySelector(s);
-const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
-const state={ticket:"",path:"",tab:"overview",pins:[],inv:null,files:[]};
-const TABS=[["overview","Overview"],["findings","Findings"],["timeline","Timeline"],["access","Access log"],["search","Search"],["pins","Report"]];
-async function api(p,params){const u=new URL(p,location.href);for(const[k,v]of Object.entries(params||{}))if(v!==undefined&&v!=="")u.searchParams.set(k,v);const r=await fetch(u);const j=await r.json();if(j.error)throw new Error(j.error);return j}
-function pin(item){state.pins.push(item);$("#cnt").textContent=state.pins.length;try{localStorage.setItem("pins:"+state.ticket,JSON.stringify(state.pins))}catch(e){}}
-window._pins=[];function pinBtn(obj){window._pins.push(obj);return `<button class="pin sm" onclick="pin(window._pins[${window._pins.length-1}]);this.textContent='Pinned';this.disabled=true">Pin to report</button>`}
-function loadPins(){try{state.pins=JSON.parse(localStorage.getItem("pins:"+state.ticket)||"[]")}catch(e){state.pins=[]}$("#cnt").textContent=state.pins.length}
-function busy(msg){$("#main").innerHTML=`<div class="spin">${esc(msg||"Working...")}</div>`}
-function dnodes(){return state.inv?state.inv.nodes.map(n=>n.node):[]}
-
-async function init(){
-  const t=await api("/api/tickets");
-  $("#ticket").innerHTML=t.tickets.map(x=>`<option>${esc(x)}</option>`).join("");
-  const last=localStorage.getItem("lastTicket");if(last&&t.tickets.includes(last))$("#ticket").value=last;
-  $("#tabs").innerHTML=TABS.map(([k,l])=>`<button data-k="${k}">${l}</button>`).join("");
-  $("#tabs").onclick=e=>{if(e.target.dataset.k){state.tab=e.target.dataset.k;render()}};
-  $("#ticket").onchange=loadTicket;$("#coll").onchange=loadColl;
-  $("#reload").onclick=()=>loadColl(true);
-  $("#saveRep").onclick=saveReport;
-  loadTicket();
-}
-async function loadTicket(){
-  state.ticket=$("#ticket").value;try{localStorage.setItem("lastTicket",state.ticket)}catch(e){}
-  loadPins();
-  const c=await api("/api/collections",{ticket:state.ticket});
-  $("#coll").innerHTML=c.map(x=>`<option value="${esc(x.path)}">${esc(x.name)} (${x.nodes} nodes)</option>`).join("");
-  if(!c.length){state.path="";$("#main").innerHTML='<div class="card">No cbcollect directories found under this ticket.</div>';return}
-  loadColl();
-}
-async function loadColl(refresh){
-  state.path=$("#coll").value;if(!state.path)return;
-  busy("Reading inventory...");
-  state.inv=await api("/api/inventory",{path:state.path,refresh:refresh===true?1:""});
-  state.files=await api("/api/logfiles",{path:state.path});
-  state.scan=null;render();
-}
-function render(){
-  document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.k===state.tab));
-  window._pins=[];
-  ({overview,findings,timeline,access,search,pins})[state.tab]();
-}
-
-// ---- Overview
-function overview(){
-  const inv=state.inv;if(!inv)return;
-  const warn=[];
-  if(inv.versions.length>1)warn.push("Mixed versions: "+inv.versions.join(", "));
-  const rows=inv.nodes.map(n=>`<tr><td class="mono">${esc(n.node)}</td><td>${esc(n.services)||'<span class="warn">?</span>'}</td><td>${esc(n.version)}</td><td>${esc(n.cpus)}</td></tr>`).join("");
-  const lr={};inv.nodes.forEach(n=>n.logs.forEach(l=>{(lr[l.file]=lr[l.file]||[]).push(l)}));
-  const lrows=Object.entries(lr).map(([f,a])=>{const first=Math.max(...a.map(x=>x.a||0)),last=Math.min(...a.map(x=>x.b||1e12));
-    const mn=a.map(x=>x.first).filter(Boolean).sort()[0],mx=a.map(x=>x.last).filter(Boolean).sort().slice(-1)[0];
-    const bad=a.some(x=>!x.first);
-    return `<tr><td class="mono">${esc(f)}</td><td>${a.length}</td><td class="mono">${esc(mn||"")}</td><td class="mono">${esc(mx||"")}</td></tr>`}).join("");
-  const pr=pinBtn({title:"Cluster inventory",note:inv.nodes.map(n=>`${n.node}: services [${n.services}], version ${n.version}`).join("\n"),command:(inv.nodes[0]||{}).services_cmd||"",where:"each node, couchbase.log"});
-  $("#main").innerHTML=`${warn.map(w=>`<div class="card warn">${esc(w)}</div>`).join("")}
-  <div class="card">${pr}<b>Nodes (${inv.nodes.length})</b>
-  <p class="sm mut">Services come from each node's own <code>{node,'ns_1@&lt;node&gt;...',services}</code> line in couchbase.log, not from the cluster-wide list.</p>
-  <table><tr><th>Node</th><th>Services</th><th>Version</th><th>CPUs</th></tr>${rows}</table></div>
-  <div class="card"><b>Log time ranges across nodes</b> <span class="sm mut">(UTC, earliest first line, latest last line)</span>
-  <table><tr><th>File</th><th>Nodes</th><th>First</th><th>Last</th></tr>${lrows}</table>
-  <p class="sm mut">Events after a log's last line cannot be decided from that log.</p></div>`;
-}
-
-// ---- Findings
-async function findings(){
-  if(!state.scan){busy("Scanning all nodes against the signature catalogue (may take a minute)...");state.scan=await api("/api/scan",{path:state.path})}
-  const s=state.scan;
-  const items=s.findings.map(f=>{
-    const hits=f.hits.map(h=>`<tr><td class="mono">${esc(h.node)}</td><td class="mono">${esc(h.file)}</td><td>${h.count}</td><td class="mono">${esc(h.first)}</td><td class="mono">${esc(h.last)}</td></tr>`).join("");
-    const sm=f.hits[0].samples.map(x=>esc(x)).join("\n");
-    const pb=pinBtn({title:f.title,note:`${f.meaning}\nTotal ${f.total} matches across ${f.hits.length} node/file combinations.`,command:`rg -N -c ${JSON.stringify(f.regex)} <${f.files.join(", ")}>`,output:f.hits.map(h=>`${h.node} ${h.file}: ${h.count} (first ${h.first}, last ${h.last})`).join("\n")+"\n\nSample:\n"+f.hits[0].samples.join("\n"),where:"per node"});
-    return `<div class="card">${pb}<span class="tag ${f.severity}">${f.severity}</span> <b>${esc(f.title)}</b> <span class="mut">${esc(f.component)} &middot; ${f.total} matches</span>
-    <div class="sm">${esc(f.meaning)} <span class="mut">Next: ${esc(f.next)}</span></div>
-    <details><summary class="sm">Per node (${f.hits.length})</summary><table><tr><th>Node</th><th>File</th><th>Count</th><th>First</th><th>Last</th></tr>${hits}</table>
-    <pre>${esc(f.hits[0].command)}\n\n${sm}</pre>
-    <button class="sm" onclick="gotoTimeline('${esc(f.hits[0].first)}','${esc(f.regex.replace(/\\/g,"\\\\").replace(/'/g,"\\'"))}')">Timeline at first hit</button></details></div>`}).join("");
-  $("#main").innerHTML=`<div class="row sm mut">${s.findings.length} of ${s.signatures} signatures matched across ${s.nodes} nodes. Duplicate-log suppression lines are excluded from counts.</div>${items||'<div class="card">No signatures matched.</div>'}`;
-}
-function gotoTimeline(ts,rx){state.tl={at:ts};state.tab="timeline";render()}
-
-// ---- Timeline
-function fileChecks(sel,def){return state.files.map(f=>`<label><input type="checkbox" name="${sel}" value="${esc(f)}" ${def.includes(f)?"checked":""}> ${esc(f)}</label>`).join(" ")}
-function nodeChecks(){return dnodes().map(n=>`<label><input type="checkbox" name="tn" value="${esc(n)}" checked> ${esc(n)}</label>`).join(" ")}
-function timeline(){
-  const at=(state.tl&&state.tl.at)||"";
-  $("#main").innerHTML=`<div class="card"><div class="row">
-  <label>Centre time (UTC)</label><input id="tat" size="22" placeholder="2026-10-03 13:12:43" value="${esc(at)}">
-  <label>+/- minutes</label><input id="twin" size="4" value="2">
-  <label>Regex filter</label><input id="trx" size="30" placeholder="optional, e.g. failover|error">
-  <button class="pri" id="tgo">Show</button></div>
-  <details><summary class="sm">Files and nodes</summary><div class="sm">${fileChecks("tf",["ns_server.info.log","ns_server.error.log","ns_server.goxdcr.log","memcached.log","ns_server.babysitter.log"])}</div><div class="sm" style="margin-top:6px">${nodeChecks()}</div></details></div><div id="tout"></div>`;
-  $("#tgo").onclick=async()=>{
-    const files=[...document.querySelectorAll("input[name=tf]:checked")].map(x=>x.value).join(",");
-    const nodes=[...document.querySelectorAll("input[name=tn]")].every(x=>x.checked)?"":[...document.querySelectorAll("input[name=tn]:checked")].map(x=>x.value).join(",");
-    $("#tout").innerHTML='<div class="spin">Reading...</div>';
-    try{const r=await api("/api/timeline",{path:state.path,at:$("#tat").value,window:$("#twin").value,files,regex:$("#trx").value,nodes});
-      const out=r.rows.map(x=>`${x.t} ${x.node} ${x.file}: ${x.line}`).join("\n");
-      const pb=pinBtn({title:"Timeline "+$("#tat").value+" +/- "+$("#twin").value+"m",command:r.command,output:out.slice(0,20000),where:"merged across nodes"});
-      $("#tout").innerHTML=`<div class="card">${pb}<div class="sm mut">${r.rows.length} lines${r.truncated?" (truncated)":""}. Multi-line entries show their first line only.</div>
-      <table>${r.rows.map(x=>`<tr><td class="mono" style="white-space:nowrap">${esc(x.t.slice(11))}</td><td class="mono">${esc(x.node)}</td><td class="mono mut">${esc(x.file.replace("ns_server.","").replace(".log",""))}</td><td class="mono ln">${esc(x.line)}</td></tr>`).join("")}</table></div>`}
-    catch(e){$("#tout").innerHTML=`<div class="card err">${esc(e.message)}</div>`}};
-  if(at)$("#tgo").click();
-}
-
-// ---- Access
-function access(){
-  $("#main").innerHTML=`<div class="card"><div class="row">
-  <label>Line contains (regex)</label><input id="apat" size="34" placeholder="Administrator/UI  or  controller/failOver">
-  <label>Group by</label><select id="agrp"><option value="user">user</option><option value="user_endpoint">user + endpoint</option><option value="endpoint">endpoint</option><option value="client">client address</option><option value="status">status</option><option value="status_size">status + size</option></select>
-  <label>From</label><input id="afrom" size="19" placeholder="optional UTC"><label>To</label><input id="ato" size="19" placeholder="optional UTC">
-  <button class="pri" id="ago">Analyse</button></div>
-  <div class="sm mut">Counts per node from each ns_server.http_access.log. A node with 0 matches is shown too, which is how you prove a negative across the cluster.</div></div><div id="aout"></div>`;
-  $("#ago").onclick=async()=>{
-    $("#aout").innerHTML='<div class="spin">Reading access logs...</div>';
-    try{const r=await api("/api/access",{path:state.path,pattern:$("#apat").value,group:$("#agrp").value,from:$("#afrom").value,to:$("#ato").value});
-      const names=Object.keys(r.nodes).sort();
-      const summary=names.map(n=>`${n} ${r.nodes[n].total}`).join("\n");
-      const pb=pinBtn({title:"Access log: "+($("#apat").value||"all")+" by "+$("#agrp").value,command:"for d in cbcollect_info_*/; do echo \"$d $(grep -c '"+$("#apat").value+"' $d/ns_server.http_access.log)\"; done",output:summary+"\n\n"+names.filter(n=>r.nodes[n].total).map(n=>n+":\n"+r.nodes[n].top.map(t=>`${String(t[1]).padStart(7)} ${t[0]}`).join("\n")).join("\n\n"),where:"each node, ns_server.http_access.log"});
-      $("#aout").innerHTML=`<div class="card">${pb}<b>Total matches per node</b><table><tr><th>Node</th><th>Matches</th><th>Top groups</th></tr>${names.map(n=>{const x=r.nodes[n];return `<tr><td class="mono">${esc(n)}</td><td>${x.total}</td><td class="mono">${x.top.slice(0,5).map(t=>t[1]+" "+esc(t[0])).join("<br>")}</td></tr>`}).join("")}</table></div>
-      <div class="card"><details><summary class="sm">First / last matching line per node</summary>${names.filter(n=>r.nodes[n].total).map(n=>`<div class="flt"><b>${esc(n)}</b><pre>${esc(r.nodes[n].first)}\n${esc(r.nodes[n].last)}</pre></div>`).join("")}</details></div>`}
-    catch(e){$("#aout").innerHTML=`<div class="card err">${esc(e.message)}</div>`}};
-}
-
-// ---- Search
-function search(){
-  $("#main").innerHTML=`<div class="card"><div class="row"><label>Regex</label><input id="srx" size="44" placeholder="e.g. Failover of inactive nodes">
-  <label><input type="checkbox" id="sic" checked> ignore case</label><label>context</label><input id="sctx" size="2" value="0">
-  <button class="pri" id="sgo">Search</button></div>
-  <details open><summary class="sm">Files</summary><div class="sm">${fileChecks("sf",["ns_server.info.log","ns_server.error.log","ns_server.goxdcr.log"])}</div></details>
-  <details><summary class="sm">Nodes</summary><div class="sm">${nodeChecks()}</div></details></div><div id="sout"></div>`;
-  $("#sgo").onclick=async()=>{
-    const files=[...document.querySelectorAll("input[name=sf]:checked")].map(x=>x.value).join(",");
-    const nodes=[...document.querySelectorAll("input[name=tn]")].every(x=>x.checked)?"":[...document.querySelectorAll("input[name=tn]:checked")].map(x=>x.value).join(",");
-    $("#sout").innerHTML='<div class="spin">Searching...</div>';
-    try{const r=await api("/api/search",{path:state.path,regex:$("#srx").value,files,nodes,icase:$("#sic").checked?1:0,context:$("#sctx").value});
-      const out=r.rows.map(x=>`${x.node} ${x.file}:${x.line}`).join("\n");
-      const pb=pinBtn({title:"Search: "+$("#srx").value,command:r.command+" <files>",output:out.slice(0,20000),where:"each node"});
-      $("#sout").innerHTML=`<div class="card">${pb}<div class="sm mut">${r.rows.length} lines${r.truncated?" (truncated at 300)":""}</div><table>${r.rows.map(x=>`<tr><td class="mono" style="white-space:nowrap">${esc(x.node)}</td><td class="mono mut">${esc(x.file.replace("ns_server.","").replace(".log",""))}</td><td class="mono ln">${esc(x.line)}</td></tr>`).join("")}</table></div>`}
-    catch(e){$("#sout").innerHTML=`<div class="card err">${esc(e.message)}</div>`}};
-  $("#srx").addEventListener("keydown",e=>{if(e.key==="Enter")$("#sgo").click()});
-}
-
-// ---- Pins / report
-function pins(){
-  $("#main").innerHTML=`<div class="card"><div class="row"><b>Pinned evidence (${state.pins.length})</b><button id="clr">Clear all</button></div>
-  <p class="sm mut">Saving writes <code>triage_report_vN.md</code> into the ticket folder as a new version. Every item carries its command and output. Add your analysis around it afterwards; this tool does not draw conclusions.</p>
-  ${state.pins.map((p,i)=>`<div class="flt"><b>${esc(p.title)}</b> <button class="sm" onclick="state.pins.splice(${i},1);$('#cnt').textContent=state.pins.length;savePins();pins()">remove</button>
-  ${p.note?`<div class="sm">${esc(p.note)}</div>`:""}${p.command?`<pre>${esc(p.command)}</pre>`:""}${p.output?`<pre>${esc(p.output.slice(0,1500))}${p.output.length>1500?"\n...":""}</pre>`:""}</div>`).join("")||'<div class="mut">Nothing pinned yet.</div>'}</div>`;
-  $("#clr").onclick=()=>{state.pins=[];savePins();$("#cnt").textContent=0;pins()};
-}
-function savePins(){try{localStorage.setItem("pins:"+state.ticket,JSON.stringify(state.pins))}catch(e){}}
-async function saveReport(){
-  if(!state.pins.length){alert("Nothing pinned yet.");return}
-  const r=await fetch("/api/report",{method:"POST",body:JSON.stringify({ticket:state.ticket,items:state.pins,header:"Collection: "+state.path})});
-  const j=await r.json();alert(j.error?("Error: "+j.error):("Saved "+j.file));
-}
-init();
-</script>
+<div id="bar"></div>
+<header id="top"></header>
+<div id="scope"></div>
+<main id="page"></main>
+<section id="dock"></section>
+<div id="modal"></div>
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+<script src="/static/tickets.js"></script>
+<script src="/static/start.js"></script>
+<script src="/static/logs.js"></script>
+<script src="/static/analyze.js"></script>
+<script src="/static/config.js"></script>
+<script src="/static/settings.js"></script>
+<script>boot()</script>
 </body>
 </html>
