@@ -383,7 +383,7 @@ prep_ticket() {
         { grep -oE 'https://supportal\.couchbase\.com/snapshot/[a-f0-9]+::[0-9]+' || true; } | \
         sort -u)
 
-    # PREP_SNAPSHOTS (set by cbtriage): download only these snapshot URLs, one per line; "none" skips snapshots
+    # PREP_SNAPSHOTS (optional): download only these snapshot URLs, one per line; "none" skips snapshots
     if [ -n "${PREP_SNAPSHOTS:-}" ]; then
         snapshot_urls=$(printf '%s\n' "$snapshot_urls" | { grep -Fxf <(printf '%s\n' "$PREP_SNAPSHOTS") || true; })
     fi
