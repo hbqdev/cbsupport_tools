@@ -64,7 +64,7 @@ def apply_root(path):
         getattr(m, a).clear()
 
 
-def start_fetch(ticket):
+def start_fetch(ticket, snaps=None):
     """Run the parent repo's prep_ticket_aws.sh for one ticket in the background and keep its output."""
     if not re.fullmatch(r"\d{3,8}", ticket or ""):
         raise ValueError("a ticket number is digits only, for example 81395")
@@ -77,9 +77,75 @@ def start_fetch(ticket):
     os.makedirs(logdir, exist_ok=True)
     lp = os.path.join(logdir, "%s.log" % ticket)
     lf = open(lp, "w")
-    proc = subprocess.Popen(["bash", PREP, ticket], cwd=PARENT, stdout=lf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+    env = dict(os.environ)
+    if snaps is not None:  # which snapshots to fetch; an empty list means none (the ticket's own files and attachments still come)
+        bad = [x for x in snaps if not re.fullmatch(r"https://supportal\.couchbase\.com/snapshot/[a-f0-9]+::\d+", x)]
+        if bad:
+            raise ValueError("not a snapshot address: %s" % bad[0])
+        env["PREP_SNAPSHOTS"] = "\n".join(snaps) or "none"
+    proc = subprocess.Popen(["bash", PREP, ticket], cwd=PARENT, env=env, stdout=lf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
     JOBS[ticket] = {"proc": proc, "log": lp, "started": time.time()}
     return {"started": True, "running": True}
+
+
+AWSLOGIN = {}
+
+
+def aws_login_start():
+    """Run `aws sso login` for the configured profile. It opens the browser on this computer; its output carries the address and code as a fallback."""
+    j = AWSLOGIN.get("job")
+    if j and j["proc"].poll() is None:
+        return {"started": False, "running": True}
+    profile = config.load_settings()["aws_profile"]
+    if not re.fullmatch(r"[\w.@-]{1,64}", profile or ""):
+        raise ValueError("the AWS profile name in Settings looks wrong")
+    logdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache", "jobs")
+    os.makedirs(logdir, exist_ok=True)
+    lp = os.path.join(logdir, "awslogin.log")
+    lf = open(lp, "w")
+    try:
+        proc = subprocess.Popen(["aws", "sso", "login", "--profile", profile], stdout=lf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+    except FileNotFoundError:
+        raise ValueError("the aws command is not installed")
+    AWSLOGIN["job"] = {"proc": proc, "log": lp, "started": time.time(), "profile": profile}
+    return {"started": True, "running": True}
+
+
+def aws_login_status():
+    j = AWSLOGIN.get("job")
+    if not j:
+        return {"job": False}
+    rc = j["proc"].poll()
+    try:
+        txt = open(j["log"], errors="replace").read()
+    except OSError:
+        txt = ""
+    m = re.search(r"https://\S+", txt)
+    c = re.search(r"\b[A-Z]{4}-[A-Z]{4}\b", txt)
+    out = {"job": True, "running": rc is None, "rc": rc, "url": m.group(0) if m else "", "code": c.group(0) if c else "", "log": txt[-800:], "seconds": int(time.time() - j["started"]), "profile": j["profile"]}
+    if rc is not None:
+        out["signed_in"] = rc == 0
+    return out
+
+
+def clear_logs(ticket):
+    """Delete a ticket's whole folder from the disk, so the next download starts clean."""
+    import shutil
+    if not re.fullmatch(r"\d{3,8}", ticket or ""):
+        raise ValueError("a ticket number is digits only")
+    j = JOBS.get(ticket)
+    if j and j["proc"].poll() is None:
+        raise ValueError("a download is running for this ticket, cancel it first")
+    d = os.path.realpath(os.path.join(ROOT, ticket))
+    if os.path.dirname(d) != ROOT or not os.path.isdir(d):
+        raise ValueError("there is no folder for ticket %s under %s" % (ticket, ROOT))
+    size = dir_size(d)
+    shutil.rmtree(d)
+    CACHE.clear()
+    for m, a in ((prof, "_IDX"), (logfiles, "_INV"), (tickets, "_CACHE")):
+        getattr(m, a).clear()
+    JOBS.pop(ticket, None)
+    return {"deleted": d, "bytes": size}
 
 
 def dir_size(path):
@@ -111,7 +177,8 @@ def job_status(ticket):
                 stage = ln.strip()[:160]
                 if ln.startswith("==="):
                     break
-        out.update({"running": rc is None, "rc": rc, "log": txt[-3500:], "stage": stage, "seconds": int(time.time() - j["started"]),
+        out.update({"auth_problem": rc not in (None, 0) and bool(re.search(r"token has expired|sso session|aws sso login|unable to locate credentials|expiredtoken|error when retrieving token|security token", txt, re.I)),
+                    "running": rc is None, "rc": rc, "log": txt[-3500:], "stage": stage, "seconds": int(time.time() - j["started"]),
                     "bytes": dir_size(tdir) if tdir and os.path.isdir(tdir) else 0})
     return out
 
@@ -284,6 +351,19 @@ class H(BaseHTTPRequestHandler):
                                 int(g("rows", "500")), excl, json.loads(g("pick")) if g("pick") else None)
                 r["window"] = {"from": core.fmt_ts(tf), "to": core.fmt_ts(tt), "iso_prefix": pre} if tf is not None else None
                 return self._json(r)
+            if u.path == "/api/awslogin":
+                return self._json(aws_login_status())
+            if u.path == "/api/tz":
+                out = {}
+                for nd in core.collection_nodes(self._path(qs)):
+                    offs = {}
+                    for fn in ("ns_server.info.log", "ns_server.debug.log", "memcached.log", "ns_server.error.log"):
+                        fp = os.path.join(nd, fn)
+                        if os.path.isfile(fp):
+                            offs[fn] = core.file_offset(fp)
+                            break
+                    out[core.node_short(nd)] = next(iter(offs.values()), 0)
+                return self._json({"nodes": out})
             if u.path == "/api/signatures":
                 return self._json(core.load_signatures())
             return self._json({"error": "not found"}, 404)
@@ -318,7 +398,11 @@ class H(BaseHTTPRequestHandler):
                 subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", p])
                 return self._json({"ok": True})
             if u.path == "/api/fetch":
-                return self._json(start_fetch(str(body.get("ticket", "")).strip()))
+                return self._json(start_fetch(str(body.get("ticket", "")).strip(), body.get("snapshots")))
+            if u.path == "/api/clearlogs":
+                return self._json(clear_logs(str(body.get("ticket", "")).strip()))
+            if u.path == "/api/awslogin":
+                return self._json(aws_login_start())
             if u.path == "/api/fetchcancel":
                 j = JOBS.get(str(body.get("ticket", "")))
                 if j and j["proc"].poll() is None:

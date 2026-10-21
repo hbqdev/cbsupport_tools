@@ -142,10 +142,25 @@ def _scan_node(node, nd, fns, pattern, o, t_from, t_to, cap_rows, capture_rx, ex
                                 "gap": 0.0, "gap_at": None, "prev": None, "iv": Counter()}
     if not fns:
         return ag
-    cmd = _rg_args(o) + ["-e", pattern, "--"] + [os.path.join(nd, f) for f in fns]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace")
     timed = t_from is not None or t_to is not None
     prefix = nd + os.sep
+    # no text to search for: let rg skip lines outside the time window, writing the window in each file's own time zone
+    runs = [(pattern, o, fns)]
+    if pattern == "." and timed:
+        lo = t_from if t_from is not None else t_to - 400 * 86400
+        hi = t_to if t_to is not None else t_from + 400 * 86400
+        by = {}
+        for f in fns:
+            by.setdefault(core.file_offset(os.path.join(nd, f)), []).append(f)
+        runs = [(core.time_regex(lo + off, hi + off), dict(o, fixed=False, word=False, invert=False, pcre2=False), fs) for off, fs in by.items()]
+    for pat, oo, fs in runs:
+        _scan_one_run(ag, node, nd, pat, oo, fs, timed, t_from, t_to, prefix, cap_rows, capture_rx, excl)
+    return ag
+
+
+def _scan_one_run(ag, node, nd, pattern, o, fns, timed, t_from, t_to, prefix, cap_rows, capture_rx, excl):
+    cmd = _rg_args(o) + ["-e", pattern, "--"] + [os.path.join(nd, f) for f in fns]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace")
     for raw in p.stdout:
         # "<path>\0<lineno>:<text>"
         path, _, rest = raw.partition("\0")
@@ -194,7 +209,30 @@ def _scan_node(node, nd, fns, pattern, o, t_from, t_to, cap_rows, capture_rx, ex
     p.wait()
     if p.returncode == 2 and err.strip():
         raise ValueError(" ".join(l.strip() for l in err.splitlines() if l.strip())[:400])
-    return ag
+
+
+def _inherit_times(fp, linenos):
+    """For each wanted line number, the time of the nearest timestamped line at or above it (one pass over the file)."""
+    want = iter(linenos)
+    cur = next(want, None)
+    out, last = {}, None
+    try:
+        with open(fp, "rb") as f:
+            for n, raw in enumerate(f, 1):
+                if cur is None:
+                    break
+                if n <= cur:
+                    t = core.parse_ts(raw[:300].decode("utf-8", "replace"))
+                    if t is not None:
+                        last = t
+                if n == cur:
+                    out[cur] = last
+                    cur = next(want, None)
+                    while cur is not None and cur == n:
+                        cur = next(want, None)
+    except OSError:
+        pass
+    return out
 
 
 def _median(c):
@@ -283,7 +321,23 @@ def run(path, pattern, globs, nodes_filter=None, opts=None, t_from=None, t_to=No
                         "last": core.fmt_ts(v["last"]), "sample": v["sample"]})
         return out
 
-    rows = sorted(agg.rows, key=lambda r: (r[0] is None, r[0] or 0, r[1]))[:rows_cap]
+    inherited = set()
+    todo = {}
+    for i, r in enumerate(agg.rows):
+        if r[0] is None and r[3]:
+            todo.setdefault((r[1], r[2]), []).append(i)
+    if todo:  # a continuation line of a multi-line entry has no time of its own: take the time of the entry it belongs to
+        nd_of = {n: d for n, d, _ in plan}
+        with ThreadPoolExecutor(max_workers=min(8, len(todo))) as ex:
+            jobs = {k: ex.submit(_inherit_times, os.path.join(nd_of[k[0]], k[1]), sorted(agg.rows[i][3] for i in idx)) for k, idx in todo.items()}
+            for k, idx in todo.items():
+                got = jobs[k].result()
+                for i in idx:
+                    r = agg.rows[i]
+                    if got.get(r[3]) is not None:
+                        agg.rows[i] = (got[r[3]], r[1], r[2], r[3], r[4])
+                        inherited.add((r[1], r[2], r[3]))
+    rows = sorted(agg.rows, key=lambda r: (r[0] is None, r[0] or 0, r[1], r[3]))[:rows_cap]
     cmd = shell_command(pattern, o, globs)
     hint = BUCKET_SHELL.get(used)
     return {
@@ -297,9 +351,10 @@ def run(path, pattern, globs, nodes_filter=None, opts=None, t_from=None, t_to=No
         "counts": counts, "histogram": hist,
         "repeats": tab(agg.rep), "repeats_capped": agg.rep_capped, "repeats_sampled": agg.rep_sampled, "repeat_sample": REPEAT_SAMPLE,
         "groups": tab(agg.grp), "capture_note": capture_note, "has_groups": capture_rx is not None,
-        "rows": [{"t": core.fmt_ts(r[0]), "node": r[1], "file": r[2], "lineno": r[3], "line": r[4]} for r in rows],
+        "rows": [{"t": core.fmt_ts(r[0]), "node": r[1], "file": r[2], "lineno": r[3], "line": r[4], **({"inh": True} if (r[1], r[2], r[3]) in inherited else {})} for r in rows],
         "rows_truncated": agg.more or agg.matched > len(rows),
         "excluded": "lines containing 'suppressing duplicate log' are left out of every count",
+        "offsets": {fn: core.file_offset(os.path.join(nd, fn)) for _, nd, fns in plan[:1] for fn in fns},
     }
 
 

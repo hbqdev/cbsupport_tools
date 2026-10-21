@@ -525,3 +525,57 @@ def write_report(root, ticket, items, header):
     with open(fp, "w") as f:
         f.write("\n".join(L))
     return fp
+
+
+def time_regex(t0, t1):
+    """Coarse rg pattern for lines whose timestamp falls in [t0, t1]; the exact test is done on the parsed time."""
+    span = t1 - t0
+    if span <= 3 * 3600:
+        step, f_iso, f_acc = 60, "%Y-%m-%dT%H:%M", "%d/%b/%Y:%H:%M"
+    elif span <= 4 * 86400:
+        step, f_iso, f_acc = 3600, "%Y-%m-%dT%H", "%d/%b/%Y:%H"
+    else:
+        step, f_iso, f_acc = 86400, "%Y-%m-%d", "%d/%b/%Y"
+    iso, acc, t = [], [], t0 - t0 % step
+    while t <= t1 and len(iso) < 4000:
+        g = time.gmtime(t)
+        iso.append(time.strftime(f_iso, g).replace("T", "[T ]"))
+        acc.append(time.strftime(f_acc, g))
+        t += step
+    return "(?:" + "|".join(iso + acc) + ")"
+
+
+_OFF_RE = re.compile(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,]\d+)?(Z|[+-]\d\d:?\d\d)?")
+_ACC_OFF_RE = re.compile(r"\[\d\d/\w{3}/\d{4}:\d\d:\d\d:\d\d ([+-]\d{4})\]")
+_OFF_CACHE = {}
+
+
+def file_offset(fp):
+    """Seconds east of UTC that the timestamps written in this file use (0 for Z, none, or +00:00). Read from the first timestamped line."""
+    try:
+        st = os.stat(fp)
+    except OSError:
+        return 0
+    key = (fp, st.st_size, int(st.st_mtime))
+    if key in _OFF_CACHE:
+        return _OFF_CACHE[key]
+    off = 0
+    try:
+        with open(fp, "rb") as f:
+            head = f.read(65536).decode("utf-8", "replace")
+        for ln in head.splitlines():
+            m = _OFF_RE.search(ln[:200])
+            tz = m.group(1) if m else None
+            if not m:
+                a = _ACC_OFF_RE.search(ln)
+                tz = a.group(1) if a else None
+                if not a:
+                    continue
+            if tz and tz != "Z":
+                d = tz[1:].replace(":", "")
+                off = (1 if tz[0] == "+" else -1) * (int(d[:2]) * 3600 + int(d[2:4]) * 60)
+            break
+    except OSError:
+        pass
+    _OFF_CACHE[key] = off
+    return off
