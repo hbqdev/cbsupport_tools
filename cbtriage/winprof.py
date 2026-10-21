@@ -64,25 +64,26 @@ def index_file(fp):
     try:
         with open(key) as f:
             j = json.load(f)
-        if j["size"] == st.st_size and j["mtime"] == int(st.st_mtime):
+        if j["size"] == st.st_size and j["mtime"] == int(st.st_mtime) and j.get("v") == 2:
             return {int(k): v for k, v in j["d"].items()}
     except (OSError, ValueError, KeyError):
         pass
     acc = os.path.basename(fp).endswith("http_access.log")
     out = {}
+    off = core.file_offset(fp)   # the file writes local times; the index is kept in UTC
     tot = _rg_counter(_ACC_TOTAL if acc else _ISO_TOTAL, fp)
     for s, n in tot.items():
-        out[_epoch_min(s.strip())] = [n, 0, 0]
+        out[_epoch_min(s.strip()) - off] = [n, 0, 0]
     if not acc:
         for idx, pat in ((1, _ISO_ERR), (2, _ISO_WARN)):
             for s, n in _rg_counter(pat, fp).items():
                 s = s.strip()
                 if s:
-                    out.setdefault(_epoch_min(s), [0, 0, 0])[idx] += n
+                    out.setdefault(_epoch_min(s) - off, [0, 0, 0])[idx] += n
     out.pop(0, None)
     try:
         with open(key, "w") as f:
-            json.dump({"size": st.st_size, "mtime": int(st.st_mtime), "d": out}, f)
+            json.dump({"size": st.st_size, "mtime": int(st.st_mtime), "v": 2, "d": out}, f)
     except OSError:
         pass
     return out
@@ -237,22 +238,7 @@ def template_regex(tpl):
     return "".join(out)
 
 
-def time_regex(t0, t1):
-    """Coarse rg pattern for lines whose timestamp falls in [t0, t1]; the exact test is done on the parsed time."""
-    span = t1 - t0
-    if span <= 3 * 3600:
-        step, f_iso, f_acc = 60, "%Y-%m-%dT%H:%M", "%d/%b/%Y:%H:%M"
-    elif span <= 4 * 86400:
-        step, f_iso, f_acc = 3600, "%Y-%m-%dT%H", "%d/%b/%Y:%H"
-    else:
-        step, f_iso, f_acc = 86400, "%Y-%m-%d", "%d/%b/%Y"
-    iso, acc, t = [], [], t0 - t0 % step
-    while t <= t1 and len(iso) < 4000:
-        g = time.gmtime(t)
-        iso.append(time.strftime(f_iso, g).replace("T", "[T ]"))
-        acc.append(time.strftime(f_acc, g))
-        t += step
-    return "(?:" + "|".join(iso + acc) + ")"
+time_regex = core.time_regex
 
 
 def _profile_task(a):
@@ -261,7 +247,8 @@ def _profile_task(a):
     fp = os.path.join(nd, fn)
     excl = [re.compile(x, re.I if icase else 0) for x in excl_src]
     if not pattern:
-        pattern = time_regex(t0, t1) if timed else "."
+        off = core.file_offset(fp)
+        pattern = time_regex(t0 + off, t1 + off) if timed else "."
     cmd = ["rg", "-n", "-a", *flags, "-e", pattern, "--", fp]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace")
     span = max(1.0, t1 - t0)

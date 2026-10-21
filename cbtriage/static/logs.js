@@ -65,8 +65,8 @@ function drawGrid() {
   $("#qall").onclick = () => { const o = {}; Object.entries(S.fileMap).forEach(([n, m]) => { const a = Object.keys(m).filter(f => /\.log$/.test(f) && m[f].size >= TINY); if (a.length) o[n] = a; }); S.pick = o; savePick(); redraw(); };
   $("#qnone").onclick = () => { S.pick = {}; savePick(); redraw(); };
   $("#so").onchange = e => { LG.other = e.target.checked; redraw(); };
-  $("#done").onclick = () => { if (!pickSummary().files) { toast("Tick at least one file"); return; } go("questions"); };
-  const bk = $("#back"); if (bk) bk.onclick = () => { if (!pickSummary().files) { toast("Tick at least one file"); return; } scopeChanged(); go("analyze"); };
+  $("#done").onclick = () => { if (!pickSummary().files) { toast("Tick at least one file"); return; } go("workspace"); };
+  const bk = $("#back"); if (bk) bk.onclick = () => { if (!pickSummary().files) { toast("Tick at least one file"); return; } go("workspace"); };
 }
 function syncGrid() { redraw(); }
 

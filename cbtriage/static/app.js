@@ -87,15 +87,15 @@ const popClose = () => { const p = $("#xpop"); if (p) p.style.display = "none"; 
 const STEPS = [["tickets", "1", "Ticket"], ["logs", "2", "Log files"], ["questions", "3", "Question"], ["analyze", "4", "Analysis"]];
 function stepOk(k) { if (k === 'config') return true; return k === "tickets" || (k === "analyze" ? S.hasAnalysis : !!S.path); }
 function drawTop() {
-  $("#top").innerHTML = `<div class="logo"><i>cb</i>triage</div>
-    <nav class="steps">${STEPS.map(([k, n, l], i) => `${i ? '<span class="sep">&rsaquo;</span>' : ""}<button data-p="${k}" class="${S.page === k ? "on" : ""}" ${stepOk(k) ? "" : 'disabled title="Finish the earlier steps first"'}><span class="n">${n}</span>${l}</button>`).join("")}</nav>
-    ${S.ticket && S.path ? `<span class="tkpill" title="${esc(S.info ? S.info.subject : "")}">Ticket <b>${esc(S.ticket)}</b>${S.info && S.info.subject ? ` <span class="muted">${esc(S.info.subject.length > 46 ? S.info.subject.slice(0, 46) + "..." : S.info.subject)}</span>` : ""}</span>` : ""}
+  $("#top").innerHTML = `<a class="logo" id="logo" title="Back to the ticket list"><i>cb</i>triage</a>
+    ${S.ticket && S.path ? `<span class="tkpill" id="tkpill" title="Back to the ticket list">Ticket <b>${esc(S.ticket)}</b>${S.info && S.info.subject ? ` <span class="muted">${esc(S.info.subject.length > 46 ? S.info.subject.slice(0, 46) + "..." : S.info.subject)}</span>` : ""}</span>` : ""}
     ${S.colls.length > 1 ? `<select id="cl" title="Which collection of logs">${S.colls.map(x => `<option value="${esc(x.path)}" ${x.path === S.path ? "selected" : ""}>${esc(x.name)} (${x.nodes} nodes)</option>`).join("")}</select>` : ""}
-    ${dlRunning().length ? `<button class="pillbtn" id="dlpill" title="A download is running. Click to see it.">Downloading ${esc(dlRunning().join(", "))} &middot; ${esc(secs(DL[dlRunning()[0]].seconds || 0))}</button>` : ""}<div class="grow"></div><button class="btn quiet" id="cfgbtn" title="Questions, known problems and the log files they read">Customize</button><button class="btn quiet" id="setbtn" title="Who you are, how tickets are listed, connections and folders">Settings</button><button class="btn" id="dockbtn" title="Lines, commands and notes you collected for your reply">Evidence for reply${S.basket.length ? " (" + S.basket.length + ")" : ""}</button>`;
-  $$("#top .steps button").forEach(b => b.onclick = () => go(b.dataset.p));
+    ${dlRunning().length ? `<button class="pillbtn" id="dlpill" title="A download is running. Click to see it.">Downloading ${esc(dlRunning().join(", "))} &middot; ${esc(secs(DL[dlRunning()[0]].seconds || 0))}</button>` : ""}<div class="grow"></div><button class="btn quiet" id="setbtn" title="Who you are, how tickets are listed, connections and folders">Settings</button><button class="btn" id="dockbtn" title="Lines, commands and notes you collected for your reply">Evidence for reply${S.basket.length ? " (" + S.basket.length + ")" : ""}</button>`;
+  $("#logo").onclick = () => go("tickets");
+  const tp = $("#tkpill"); if (tp) tp.onclick = () => go("tickets");
   const cl = $("#cl"); if (cl) cl.onchange = e => { S.path = e.target.value; loadColl(); };
   $("#dockbtn").onclick = () => toggleDock(!S.dock);
-  $("#cfgbtn").onclick = () => go("config"); $("#setbtn").onclick = () => go("settings");
+  $("#setbtn").onclick = () => go("settings");
   const dp = $("#dlpill"); if (dp) dp.onclick = () => showTicket(dlRunning()[0]);
 }
 function ticketBanner() {
@@ -108,24 +108,14 @@ function ticketBanner() {
     ${i.description ? `<details style="margin-top:6px"><summary class="hint" style="color:var(--accent)">Show the description</summary><pre style="max-height:240px">${esc(i.description)}</pre></details>` : ""}</div>`;
 }
 document.addEventListener("click", async e => { if (e.target.id === "tbch") go("tickets"); if (e.target.id === "tbcp") copyText(S.path, "Copied the folder path"); if (e.target.id === "tbop") { try { await fetch("/api/reveal", { method: "POST", body: JSON.stringify({ path: S.path }) }); } catch (er) {} } });
-function drawScope() {
-  const el = $("#scope"); if (!el) return;
-  if (!S.path || !S.fileMap || S.page === "tickets") { el.style.display = "none"; return; }
-  el.style.display = "flex";
-  const ps = pickSummary(), off = [...S.nodesOff];
-  el.innerHTML = `<span class="sl">Reading</span><button class="pillbtn" id="ssf" title="Choose log files">${ps.files} log files on ${ps.nodes} node${ps.nodes === 1 ? "" : "s"} <span class="car">Change</span></button>${S.narrowed ? '<span class="hint">(files chosen for this question)</span>' : ""}
-    <span class="sl">during</span><button class="pillbtn" id="sst" data-pop>${S.range ? esc(S.range.length > 34 ? S.range.slice(0, 34) + "..." : S.range) : "any time"} <span class="car">Change</span></button>
-    ${off.length ? `<span class="sl">without ${esc(off.map(nshort).join(", "))}</span> <a id="ssn">include all nodes</a>` : ""}`;
-  $("#ssf").onclick = () => go("logs"); $("#sst").onclick = e => timePop(e.currentTarget);
-  const a = $("#ssn"); if (a) a.onclick = () => { S.nodesOff.clear(); scopeChanged(); };
-}
+function drawScope() { const el = $("#scope"); if (el) el.style.display = "none"; }
 function keepScroll(fn) { const y = window.scrollY; fn(); window.scrollTo(0, y); }
 function go(p, fromPop) {
   S.page = p; popClose(); document.body.classList.remove("drawer", "lp", "lpo", "lpt"); const x = $("#xdrawer"); if (x) x.style.display = "none";
   if (!fromPop) { try { history.pushState({ p }, "", "#" + p); } catch (e) {} }
   drawTop(); drawScope(); window.scrollTo(0, 0); PAGES[p]();
 }
-window.addEventListener("popstate", e => { let p = (e.state && e.state.p) || "tickets"; if (p === "analyze" && !S.hasAnalysis) p = "questions"; if (!S.path && !["tickets", "config", "settings"].includes(p)) p = "tickets"; go(p, true); });
+window.addEventListener("popstate", e => { let p = (e.state && e.state.p) || "tickets"; if (p === "analyze" || p === "questions") p = "workspace"; if (!S.path && !["tickets", "config", "settings"].includes(p)) p = "tickets"; go(p, true); });
 
 // ------------------------------------------------------------------ time range, in any format the logs use
 function timePop(anchor) {
@@ -158,8 +148,8 @@ async function openTicket(raw) {
 // ------------------------------------------------------------------ downloading a ticket's logs: runs in the background, shown wherever you are
 const DL = {}; let dlTimer = 0;
 const dlRunning = () => Object.keys(DL).filter(k => DL[k].running);
-async function startDownload(id) {
-  try { const r = await fetch("/api/fetch", { method: "POST", body: JSON.stringify({ ticket: id }) }), j = await r.json(); if (j.error) throw new Error(j.error); }
+async function startDownload(id, snaps) {
+  try { const r = await fetch("/api/fetch", { method: "POST", body: JSON.stringify({ ticket: id, snapshots: snaps }) }), j = await r.json(); if (j.error) throw new Error(j.error); }
   catch (e) { toast(String(e.message).replace(/^ValueError: /, "")); return; }
   DL[id] = { running: true, seconds: 0, bytes: 0, log: "", stage: "Starting..." }; drawTop(); updateDl(id); ensureDlPoll();
 }
@@ -176,7 +166,7 @@ async function pollDl() {
 async function onDlDone(id, st) {
   try { await refreshTickets(); } catch (e) {}
   if (st.rc === 0 && st.has_logs) toast(`Ticket ${id} is downloaded`); else toast(st.rc === 0 ? `Ticket ${id}: finished, but no cbcollect logs were found` : `Ticket ${id}: the download stopped with an error`);
-  if (S.page === "tickets" && window.showTicket && window.ticketOpenId && window.ticketOpenId() === id) { if (st.rc === 0) showTicket(id); }
+  if (S.page === "tickets" && window.showTicket && window.ticketOpenId && window.ticketOpenId() === id) showTicket(id);
 }
 function dlInner(id) {
   const st = DL[id]; if (!st) return "";
@@ -186,11 +176,54 @@ function dlInner(id) {
     <div class="row"><button class="btn" data-dlcancel="${esc(id)}">Cancel the download</button><span class="hint">You can leave this page. The download keeps going and the top bar shows it.</span></div>`;
   if (st.rc === -15 || st.rc === -9) return `<div class="card tight" style="margin:0 0 10px"><b>The download was cancelled.</b> <span class="hint">Files fetched so far stay in the ticket folder.</span><div class="row" style="margin-top:8px"><button class="btn primary" data-dlgo="${esc(id)}">Start again</button></div></div>`;
   const ok = st.rc === 0;
-  return `<div class="card tight" style="border-left:4px solid var(--${ok ? "warn" : "bad"});margin:0 0 10px"><b>${ok ? "The download finished, but no cbcollect logs were found for this ticket." : "The download stopped with an error (exit " + esc(st.rc) + ")."}</b>
-    <pre class="dllog" style="margin-top:8px">${esc(tail)}</pre><div class="row"><button class="btn primary" data-dlgo="${esc(id)}">Try again</button><span class="hint">AWS sign-in expired? Run <code>aws sso login --profile supportal</code> in a terminal first.</span></div></div>`;
+  return `<div class="card tight" style="border-left:4px solid var(--${ok ? "warn" : "bad"});margin:0 0 10px"><b>${ok ? "The download finished, but no cbcollect logs were found for this ticket." : st.auth_problem ? "The download stopped: your AWS sign-in has expired." : "The download stopped with an error (exit " + esc(st.rc) + ")."}</b>
+    <pre class="dllog" style="margin-top:8px">${esc(tail)}</pre><div class="row" style="gap:8px"><button class="btn ${st.auth_problem ? "" : "primary"}" data-dlgo="${esc(id)}">Try again</button><button class="btn ${st.auth_problem ? "primary" : ""}" data-awslogin>Sign in to AWS</button><span class="hint">${st.auth_problem ? "Sign in, then try again." : "Download failing with an AWS error? Sign in again."}</span></div></div>`;
 }
 function updateDl(id) { const el = $("#dlbox"); if (el && el.dataset.id === id) { el.innerHTML = dlInner(id); wireDl(el); } }
-function wireDl(root) { root.querySelectorAll("[data-dlcancel]").forEach(b => b.onclick = () => cancelDownload(b.dataset.dlcancel)); root.querySelectorAll("[data-dlgo]").forEach(b => b.onclick = () => startDownload(b.dataset.dlgo)); }
+// choose which snapshots to download for a ticket, then start
+async function downloadDialog(id, then) {
+  const m = $("#modal"); m.innerHTML = `<div class="mback"><div class="modal"><h2>Download logs for ${esc(id)}</h2><div class="spin">Asking Supportal which snapshots this ticket has...</div></div></div>`;
+  const close = () => { m.innerHTML = ""; };
+  let d; try { d = await api("/api/sp/ticket", { id }); } catch (e) { d = { error: e.message }; }
+  const snaps = (d && d.snapshot_urls) || [];
+  m.innerHTML = `<div class="mback"><div class="modal"><h2>Download logs for ${esc(id)}</h2>
+    ${d.error ? `<div class="err" style="margin:8px 0">Could not ask Supportal: ${esc(d.error)}. Downloading everything still works.</div>` : ""}
+    <p class="cap">Pick the cbcollect snapshots to fetch. The files the customer uploaded and the ticket's attachments always come along.</p>
+    ${snaps.length ? `<div class="row" style="gap:8px;margin-bottom:6px"><a id="dsall">All</a><a id="dsnone">None</a></div><div class="col" style="gap:6px;max-height:40vh;overflow:auto">${snaps.map((s, i) => `<label class="row" style="gap:10px;padding:6px 8px;border:1px solid var(--line);border-radius:8px"><input type="checkbox" data-s="${i}" checked><span class="mono">${esc((s.time || "").replace("T", " ").slice(0, 16) || "time unknown")}</span><span>${s.nodes ? s.nodes + " nodes" : ""}</span><span class="hint mono">${esc(s.id.split("::")[0].slice(0, 10))}</span></label>`).join("")}</div>` : '<div class="hint">No snapshots are listed on this ticket, so only the uploaded files and attachments will be fetched.</div>'}
+    <div class="row" style="margin-top:16px;gap:8px"><button class="btn primary" id="dsgo">Download</button><button class="btn" id="dscancel">Cancel</button></div></div></div>`;
+  $("#dscancel").onclick = close;
+  const boxes = () => $$("#modal [data-s]"); const all = $("#dsall"); if (all) { all.onclick = () => boxes().forEach(b => (b.checked = true)); $("#dsnone").onclick = () => boxes().forEach(b => (b.checked = false)); }
+  $("#dsgo").onclick = async () => { const pick = d.error ? undefined : boxes().filter(b => b.checked).map(b => snaps[+b.dataset.s].url); close(); await startDownload(id, pick); if (then) then(); };
+}
+// delete a ticket's logs from the disk
+function clearDialog(id, where, then) {
+  const m = $("#modal"), close = () => { m.innerHTML = ""; };
+  m.innerHTML = `<div class="mback"><div class="modal"><h2>Delete the logs of ticket ${esc(id)}?</h2><p class="cap">This deletes the whole folder from this computer, snapshots, uploaded files and attachments, so the next download starts clean. It cannot be undone.</p>
+    <div class="mono" style="background:var(--code);padding:6px 10px;border-radius:8px;word-break:break-all">${esc(where || id)}</div>
+    <div class="row" style="margin-top:16px;gap:8px"><button class="btn primary" id="cdel" style="background:var(--bad);border-color:var(--bad)">Delete from disk</button><button class="btn" id="ccan">Keep them</button></div></div></div>`;
+  $("#ccan").onclick = close;
+  $("#cdel").onclick = async () => { try { const r = await fetch("/api/clearlogs", { method: "POST", body: JSON.stringify({ ticket: id }) }), j = await r.json(); if (j.error) throw new Error(j.error);
+      close(); toast(`Deleted ${fmtSize(j.bytes)} of logs for ticket ${id}`); if (S.ticket === id) { S.path = ""; S.fileMap = null; S.inv = null; S.colls = []; drawTop(); } try { await refreshTickets(); } catch (e) {} if (then) then(); }
+    catch (e) { close(); toast(String(e.message).replace(/^ValueError: /, "")); } };
+}
+// sign in to AWS again from here (runs aws sso login on this computer; the browser opens by itself)
+async function awsLogin(then) {
+  const m = $("#modal"), close = () => { clearInterval(tm); m.innerHTML = ""; }; let tm = 0;
+  m.innerHTML = '<div class="mback"><div class="modal"><h2>Sign in to AWS</h2><div class="spin">Starting...</div></div></div>';
+  try { const r = await fetch("/api/awslogin", { method: "POST", body: "{}" }), j = await r.json(); if (j.error) throw new Error(j.error); }
+  catch (e) { m.innerHTML = `<div class="mback"><div class="modal"><h2>Sign in to AWS</h2><div class="err">${esc(String(e.message).replace(/^ValueError: /, ""))}</div><div class="row" style="margin-top:14px"><button class="btn" id="awx">Close</button></div></div></div>`; $("#awx").onclick = close; return; }
+  const draw = st => {
+    const done = st.job && !st.running, ok = done && st.signed_in;
+    m.innerHTML = `<div class="mback"><div class="modal"><h2>Sign in to AWS</h2>
+      ${ok ? '<div class="ok" style="font-size:16px">&#10003; Signed in.</div>' : done ? `<div class="err">The sign-in did not finish.</div><pre>${esc(st.log || "")}</pre>`
+        : `<p class="cap">A browser window should have opened on this computer. Approve the sign-in there and this page notices by itself.</p>${st.url ? `<p class="hint">Window did not open? Go to <a href="${esc(st.url)}" target="_blank" rel="noopener">${esc(st.url.slice(0, 70))}</a>${st.code ? ` and enter the code <b class="mono">${esc(st.code)}</b>` : ""}.</p>` : ""}<div class="spin">Waiting for you to approve it... ${esc(secs(st.seconds || 0))}</div>`}
+      <div class="row" style="margin-top:14px;gap:8px">${ok ? '<button class="btn primary" id="awx">Done</button>' : done ? '<button class="btn primary" id="awr">Try again</button><button class="btn" id="awx">Close</button>' : '<button class="btn" id="awx">Close</button>'}</div></div></div>`;
+    $("#awx").onclick = () => { close(); if (ok && then) then(); }; const rt = $("#awr"); if (rt) rt.onclick = () => { close(); awsLogin(then); };
+    if (done) clearInterval(tm);
+  };
+  const tick = async () => { try { draw(await api("/api/awslogin")); } catch (e) {} }; tm = setInterval(tick, 1500); tick();
+}
+function wireDl(root) { root.querySelectorAll("[data-dlcancel]").forEach(b => b.onclick = () => cancelDownload(b.dataset.dlcancel)); root.querySelectorAll("[data-awslogin]").forEach(b => b.onclick = () => awsLogin()); root.querySelectorAll("[data-dlgo]").forEach(b => b.onclick = () => downloadDialog(b.dataset.dlgo)); }
 async function restoreDownloads() { try { const js = await api("/api/jobs"); for (const j of js) if (j.running) DL[j.ticket] = { running: true, seconds: j.seconds, bytes: 0, log: "", stage: "" }; if (dlRunning().length) ensureDlPoll(); } catch (e) {} }
 
 // ------------------------------------------------------------------ loading a ticket and its logs
@@ -208,8 +241,8 @@ async function loadColl(refresh) {
   busy("Reading the log files of every node...");
   const [inv, fm] = await Promise.all([api("/api/inventory", { path: S.path, refresh: refresh === true ? 1 : "" }), api("/api/files", { path: S.path, refresh: refresh === true ? 1 : "" })]);
   S.inv = inv; S.fileMap = fm; S.pick = loadPick(); S.range = ""; S.nodesOff.clear(); S.scan = null; S.hasAnalysis = false;
-  if (window.analyzeReset) analyzeReset(); if (window.startReset) startReset(); if (window.logsReset) logsReset();
-  S.page = "logs"; try { history.pushState({ p: "logs" }, "", "#logs"); } catch (e) {} drawTop(); drawScope(); PAGES.logs();
+  if (window.workspaceSwitch && refresh !== true) workspaceSwitch(S.path); if (window.logsReset) logsReset();
+  go("workspace");
 }
 
 // ------------------------------------------------------------------ the reply draft: a label, the command and the verbatim output
@@ -253,5 +286,5 @@ async function boot() {
   drawTop(); drawScope(); drawDock(); restoreDownloads();
   let last = ""; try { last = localStorage.getItem("lastTicket") || ""; } catch (e) {}
   S.ticket = ""; try { history.replaceState({ p: "tickets" }, "", "#tickets"); } catch (e) {} PAGES.tickets();
-  document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { const i = $("#bigq") || $("#xq"); if (i) { e.preventDefault(); i.focus(); } } });
+  document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { const i = $("#wq") || $("#bigq") || $("#xq"); if (i) { e.preventDefault(); i.focus(); } } });
 }

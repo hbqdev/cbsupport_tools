@@ -150,6 +150,13 @@ def normalize(doc, source, as_of=""):
         for x in lst or []:
             linked.append({"kind": k, "key": x if isinstance(x, str) else (x.get("key") or x.get("id") or ""), "summary": "" if isinstance(x, str) else (x.get("summary") or x.get("title") or ""), "status": "" if isinstance(x, str) else (x.get("status") or "")})
     snaps = [{"uuid": s.get("uuid") or s.get("id") or "", "time": s.get("timestamp") or "", "nodes": len(s.get("nodes") or [])} for s in (doc.get("snapshots") or []) if isinstance(s, dict)]
+    urls = sorted(set(re.findall(r"https://supportal\.couchbase\.com/snapshot/[a-f0-9]+::\d+", json.dumps(doc))))
+    by = {x["uuid"]: x for x in snaps if x["uuid"]}
+    snap_urls = []
+    for u in urls:
+        sid = u.rsplit("/", 1)[1]
+        m = next((x for k, x in by.items() if k and (sid.startswith(k) or k.startswith(sid.split("::")[0]))), None)
+        snap_urls.append({"url": u, "id": sid, "time": (m or {}).get("time", ""), "nodes": (m or {}).get("nodes", 0)})
     files = [{"name": _name_from_url(f.get("url") or ""), "url": f.get("url") or "", "time": f.get("upload_ts") or ""} for f in (doc.get("ticket_files") or []) if isinstance(f, dict)]
     return {"source": source, "as_of": as_of,
             "ticket": {"id": str(t.get("id") or ""), "subject": t.get("subject") or "", "status": t.get("status") or "", "priority": t.get("priority") or "",
@@ -158,7 +165,7 @@ def normalize(doc, source, as_of=""):
                        "components": [g[len("component__"):].replace("__", " > ").replace("_", " ") for g in tags if g.startswith("component__")],
                        "impact": next((g[len("current_impact__"):].replace("__", " / ").replace("_", " ") for g in tags if g.startswith("current_impact__")), ""),
                        "tags": [g for g in tags if g.startswith(("highest_was_", "entitlement__server", "case_type"))][:8]},
-            "triage": triage.parse(t.get("fields")), "triage_summary": triage.summary(t.get("fields")), "events": events, "linked": linked, "snapshots": snaps, "files": files,
+            "triage": triage.parse(t.get("fields")), "triage_summary": triage.summary(t.get("fields")), "events": events, "linked": linked, "snapshots": snaps, "snapshot_urls": snap_urls, "files": files,
             "attachments": [{"name": _name_from_url(a.get("mapped_content_url") or ""), "url": a.get("mapped_content_url") or ""} for a in (doc.get("zendesk_attachments") or []) if isinstance(a, dict)]}
 
 
